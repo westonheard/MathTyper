@@ -17,6 +17,28 @@ body {
 
 #app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
 
+/* toolbar */
+#toolbar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 12px;
+  background: #fff; border-bottom: 1px solid #ddd;
+  flex-wrap: wrap;
+}
+#toolbar button {
+  min-width: 32px; height: 30px; padding: 0 8px;
+  border: 1px solid transparent; border-radius: 6px;
+  background: none; font-size: 14px; cursor: pointer;
+}
+#toolbar button:hover { background: #eee; }
+#toolbar button.active { background: #dbe7ff; border-color: #b8cffc; }
+#toolbar button.action { border: 1px solid #ccc; background: #fafafa; font-size: 13px; }
+#toolbar .sep { width: 1px; height: 20px; background: #ddd; margin: 0 6px; }
+#toolbar .spacer { flex: 1; }
+#toolbar select {
+  height: 30px; border: 1px solid #ccc; border-radius: 6px;
+  background: #fafafa; font-size: 13px; padding: 0 4px;
+}
+
 /* panes */
 #panes { display: grid; grid-template-columns: 1fr minmax(280px, 34%); min-height: 0; }
 #panes.pane-hidden { grid-template-columns: 1fr; }
