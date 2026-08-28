@@ -60,3 +60,15 @@ body {
 .ProseMirror h2 { font-size: 1.4em; }
 .ProseMirror h3 { font-size: 1.15em; }
 .ProseMirror code { background: #f4f2ef; padding: 1px 4px; border-radius: 4px; font-size: .9em; }
+
+/* math fields */
+.math-inline { display: inline-block; vertical-align: middle; }
+.math-block { display: block; text-align: center; margin: 8px 0; }
+math-field {
+  display: inline-block; min-width: 2ch;
+  font-size: 1.1em;
+  border: 1px solid transparent; border-radius: 4px; padding: 1px 3px;
+}
+math-field:focus-within { border-color: #7aa5f8; background: #f6f9ff; outline: none; }
+math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { display: none; }
+.math-block math-field { min-width: 20ch; font-size: 1.25em; }

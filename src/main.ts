@@ -1,12 +1,20 @@
 import "./styles.css";
+import "mathlive/fonts.css";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
+import { MathfieldElement } from "mathlive";
+import { MathBlock, MathInline } from "./math-nodes";
+
+MathfieldElement.soundsDirectory = null;
+MathfieldElement.fontsDirectory = null; //fonts come from the bundled fonts.css
 
 //---------- editor ----------
 const editor = new Editor({
   element: document.querySelector("#editor")!,
   extensions: [
     StarterKit,
+    MathInline,
+    MathBlock,
   ],
   content: "<h1>Welcome to MathTyper</h1><p>Start typing.</p>",
   autofocus: "end",
@@ -48,6 +56,11 @@ sep();
 addButtons([
   { label: "•", title: "Bullet list", run: () => c().focus().toggleBulletList().run(), active: () => editor.isActive("bulletList") },
   { label: "1.", title: "Numbered list", run: () => c().focus().toggleOrderedList().run(), active: () => editor.isActive("orderedList") },
+]);
+sep();
+addButtons([
+  { label: "√x", title: "Inline math (⌘E)", run: () => editor.commands.insertMathInline() },
+  { label: "∑", title: "Display math (⌘⇧E)", run: () => editor.commands.insertMathBlock() },
 ]);
 
 let timer: number | undefined;
