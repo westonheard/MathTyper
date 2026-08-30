@@ -3,11 +3,15 @@ import "mathlive/fonts.css";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { MathfieldElement } from "mathlive";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { MathBlock, MathInline } from "./math-nodes";
 import { docToLatex } from "./latex";
 
 MathfieldElement.soundsDirectory = null;
 MathfieldElement.fontsDirectory = null; //fonts come from the bundled fonts.css
+
+const isTauri = "__TAURI_INTERNALS__" in window;
 
 //---------- editor ----------
 const editor = new Editor({
@@ -71,6 +75,12 @@ addButtons([
   { label: "∑", title: "Display math (⌘⇧E)", run: () => editor.commands.insertMathBlock() },
 ]);
 
+//right side of the toolbar
+toolbar.appendChild(Object.assign(document.createElement("span"), { className: "spacer" }));
+
+addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
+addButton({ label: "Compile PDF", title: "Compile with pdflatex and open", run: compilePdf }, "action");
+
 //---------- live LaTeX pane ----------
 const pane = document.querySelector("#latex-pane")!;
 let timer: number | undefined;
@@ -82,5 +92,51 @@ editor.on("transaction", () => {
   clearTimeout(timer);
   timer = window.setTimeout(refresh, 100);
 });
+
+//---------- status ----------
+const status = document.querySelector("#status")!;
+function setStatus(msg: string, isError = false){
+  status.textContent = msg;
+  status.classList.toggle("error", isError);
+}
+
+//---------- export ----------
+function download(name: string, contents: string){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([contents]));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function exportTex(){
+  try{
+    const latex = docToLatex(editor.getJSON() as any);
+    if(!isTauri){
+      download("document.tex", latex);
+      return;
+    }
+    const path = await save({ defaultPath: "document.tex", filters: [{ name: "LaTeX", extensions: ["tex"] }] });
+    if(!path){return;}
+    await invoke("write_file", { path, contents: latex });
+    setStatus(`Saved ${path}`);
+  }catch(e){
+    setStatus(`Export failed: ${e}`, true);
+  }
+}
+
+async function compilePdf(){
+  if(!isTauri){
+    setStatus("Compile needs the desktop app, run: npm run tauri dev", true);
+    return;
+  }
+  setStatus("Compiling…");
+  try{
+    const pdf = await invoke<string>("compile_pdf", { latex: docToLatex(editor.getJSON() as any) });
+    setStatus(`Compiled → ${pdf}`);
+  }catch(e){
+    setStatus(`pdflatex failed:\n${e}`, true);
+  }
+}
 
 refresh();

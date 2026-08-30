@@ -80,3 +80,11 @@ math-field {
 math-field:focus-within { border-color: #7aa5f8; background: #f6f9ff; outline: none; }
 math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { display: none; }
 .math-block math-field { min-width: 20ch; font-size: 1.25em; }
+
+/* status bar */
+#status {
+  margin: 0; padding: 4px 12px; min-height: 24px; max-height: 30vh; overflow: auto;
+  font: 12px/1.5 "SF Mono", Menlo, monospace;
+  background: #fff; border-top: 1px solid #ddd; white-space: pre-wrap;
+}
+#status.error { color: #b3261e; }
