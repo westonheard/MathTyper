@@ -4,6 +4,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { MathfieldElement } from "mathlive";
 import { MathBlock, MathInline } from "./math-nodes";
+import { docToLatex } from "./latex";
 
 MathfieldElement.soundsDirectory = null;
 MathfieldElement.fontsDirectory = null; //fonts come from the bundled fonts.css
@@ -16,7 +17,14 @@ const editor = new Editor({
     MathInline,
     MathBlock,
   ],
-  content: "<h1>Welcome to MathTyper</h1><p>Start typing.</p>",
+  content: `
+    <h1>Welcome to MathTyper</h1>
+    <p>Type <strong>$</strong> (or press <strong>Cmd-E</strong>) to open a math field, then
+    type like Desmos: <code>/</code> makes a fraction, <code>^</code> an exponent, and
+    <code>\\alpha</code> plus space makes the Greek letter. Press <strong>Cmd-Shift-E</strong>
+    for display math.</p>
+    <p>The pane on the right is the live LaTeX for this document.</p>
+  `,
   autofocus: "end",
 });
 if(import.meta.env.DEV){(window as any).editor = editor;}
@@ -63,8 +71,11 @@ addButtons([
   { label: "∑", title: "Display math (⌘⇧E)", run: () => editor.commands.insertMathBlock() },
 ]);
 
+//---------- live LaTeX pane ----------
+const pane = document.querySelector("#latex-pane")!;
 let timer: number | undefined;
 function refresh(){
+  pane.textContent = docToLatex(editor.getJSON() as any);
   for(const [el, b] of btnEls){el.classList.toggle("active", b.active?.() ?? false);}
 }
 editor.on("transaction", () => {

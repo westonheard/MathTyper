@@ -61,6 +61,14 @@ body {
 .ProseMirror h3 { font-size: 1.15em; }
 .ProseMirror code { background: #f4f2ef; padding: 1px 4px; border-radius: 4px; font-size: .9em; }
 
+/* live LaTeX pane */
+#latex-pane {
+  margin: 0; padding: 20px 24px; overflow: auto;
+  background: #23241f; color: #d6d3cb;
+  font: 13px/1.5 "SF Mono", Menlo, monospace;
+  border-left: 1px solid #ddd; white-space: pre-wrap;
+}
+
 /* math fields */
 .math-inline { display: inline-block; vertical-align: middle; }
 .math-block { display: block; text-align: center; margin: 8px 0; }
