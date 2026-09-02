@@ -56,7 +56,7 @@ function serializeInline(nodes: PMNode[] = []): string{
         case "text": return serializeText(n);
         case "mathInline": {
           const m = cleanMath(n.attrs?.latex ?? "");
-          return `$${m}$`;
+          return m.trim() ? `$${m}$` : ""; //an abandoned empty field must not emit bare $$
         }
         case "hardBreak": return "\\\\\n";
         default: return "";
@@ -82,7 +82,7 @@ function serializeBlock(node: PMNode): string{
     }
     case "mathBlock": {
       const m = cleanMath(node.attrs?.latex ?? "");
-      return `\\[\n${m}\n\\]\n\n`;
+      return m.trim() ? `\\[\n${m}\n\\]\n\n` : "";
     }
     case "bulletList":
       return wrapList("itemize", node.content);

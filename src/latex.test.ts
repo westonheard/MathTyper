@@ -25,6 +25,17 @@ const doc = {
       type: "paragraph",
       content: [{ type: "mathInline", attrs: { latex: "\\frac{\\placeholder{}}{\\placeholder{}}" } }],
     },
+    //abandoned empty fields and boundary hard breaks must not reach the output
+    {
+      type: "paragraph",
+      content: [
+        { type: "hardBreak" },
+        { type: "text", text: "trimmed" },
+        { type: "mathInline", attrs: { latex: "" } },
+        { type: "hardBreak" },
+      ],
+    },
+    { type: "mathBlock", attrs: { latex: "  " } },
     {
       type: "codeBlock",
       content: [{ type: "text", text: "safe code\n\\end{verbatim}\nmore code" }],
@@ -46,6 +57,7 @@ for(const expected of [
   "Let $x=\\frac{1}{2}$ be \\textbf{bold}.",
   "\\[\n\\int_0^1 x\\,dx\n\\]",
   "$\\frac{}{}$",
+  "\ntrimmed\n",
   //embedded \end{verbatim} gets its token broken so the environment survives
   "safe code\n\\end {verbatim}\nmore code",
   "\\begin{itemize}\n  \\item one\n  \\item two\n\\end{itemize}",
