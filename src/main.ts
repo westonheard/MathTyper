@@ -52,27 +52,42 @@ function addButton(b: Btn, cls = ""): HTMLButtonElement{
 const sep = () => toolbar.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
 const addButtons = (list: Btn[]) => list.forEach((b) => addButton(b));
 
+//document-mutating buttons are inert while a math field holds focus (stale PM selection)
+const g = (fn: () => void) => () => {
+  if(!inMathField()){fn();}
+};
+
 addButtons([
-  { label: "B", title: "Bold (⌘B)", run: () => c().focus().toggleBold().run(), active: () => editor.isActive("bold") },
-  { label: "I", title: "Italic (⌘I)", run: () => c().focus().toggleItalic().run(), active: () => editor.isActive("italic") },
-  { label: "U", title: "Underline (⌘U)", run: () => c().focus().toggleUnderline().run(), active: () => editor.isActive("underline") },
+  { label: "B", title: "Bold (⌘B)", run: g(() => c().focus().toggleBold().run()), active: () => editor.isActive("bold") },
+  { label: "I", title: "Italic (⌘I)", run: g(() => c().focus().toggleItalic().run()), active: () => editor.isActive("italic") },
+  { label: "U", title: "Underline (⌘U)", run: g(() => c().focus().toggleUnderline().run()), active: () => editor.isActive("underline") },
 ]);
 sep();
 
+//style controls act on the document's text selection — while a math field holds
+//focus the stored ProseMirror selection is stale and styling would land elsewhere.
+function inMathField(): boolean{
+  if(document.activeElement?.tagName === "MATH-FIELD"){
+    setStatus("Text styling applies to document text — click out of the math field first.", true);
+    return true;
+  }
+  return false;
+}
+
 addButtons([
-  { label: "H1", title: "Section", run: () => c().focus().toggleHeading({ level: 1 }).run(), active: () => editor.isActive("heading", { level: 1 }) },
-  { label: "H2", title: "Subsection", run: () => c().focus().toggleHeading({ level: 2 }).run(), active: () => editor.isActive("heading", { level: 2 }) },
-  { label: "H3", title: "Subsubsection", run: () => c().focus().toggleHeading({ level: 3 }).run(), active: () => editor.isActive("heading", { level: 3 }) },
+  { label: "H1", title: "Section", run: g(() => c().focus().toggleHeading({ level: 1 }).run()), active: () => editor.isActive("heading", { level: 1 }) },
+  { label: "H2", title: "Subsection", run: g(() => c().focus().toggleHeading({ level: 2 }).run()), active: () => editor.isActive("heading", { level: 2 }) },
+  { label: "H3", title: "Subsubsection", run: g(() => c().focus().toggleHeading({ level: 3 }).run()), active: () => editor.isActive("heading", { level: 3 }) },
 ]);
 sep();
 addButtons([
-  { label: "•", title: "Bullet list", run: () => c().focus().toggleBulletList().run(), active: () => editor.isActive("bulletList") },
-  { label: "1.", title: "Numbered list", run: () => c().focus().toggleOrderedList().run(), active: () => editor.isActive("orderedList") },
+  { label: "•", title: "Bullet list", run: g(() => c().focus().toggleBulletList().run()), active: () => editor.isActive("bulletList") },
+  { label: "1.", title: "Numbered list", run: g(() => c().focus().toggleOrderedList().run()), active: () => editor.isActive("orderedList") },
 ]);
 sep();
 addButtons([
-  { label: "√x", title: "Inline math (⌘E)", run: () => editor.commands.insertMathInline() },
-  { label: "∑", title: "Display math (⌘⇧E)", run: () => editor.commands.insertMathBlock() },
+  { label: "√x", title: "Inline math (⌘E)", run: g(() => editor.commands.insertMathInline()) },
+  { label: "∑", title: "Display math (⌘⇧E)", run: g(() => editor.commands.insertMathBlock()) },
 ]);
 
 //right side of the toolbar
