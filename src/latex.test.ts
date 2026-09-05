@@ -53,6 +53,8 @@ const doc = {
 const tex = docToLatex(doc as any);
 for(const expected of [
   "\\documentclass[11pt]{article}",
+  "\\usepackage[letterpaper, margin=1in]{geometry}",
+  "\\usepackage{lmodern}",
   "\\section{Intro}",
   "Let $x=\\frac{1}{2}$ be \\textbf{bold}.",
   "\\[\n\\int_0^1 x\\,dx\n\\]",

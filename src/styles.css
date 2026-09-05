@@ -80,6 +80,18 @@ math-field {
 math-field:focus-within { border-color: #7aa5f8; background: #f6f9ff; outline: none; }
 math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { display: none; }
 .math-block math-field { min-width: 20ch; font-size: 1.25em; }
+/* popovers */
+.popover[hidden] { display: none; }
+.popover {
+  position: fixed; top: 48px; z-index: 50;
+  background: #fff; border: 1px solid #ccc; border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.14);
+  padding: 10px;
+}
+
+.page-setup { display: grid; gap: 8px; width: 240px; }
+.page-setup label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.page-setup select, .page-setup input { width: 130px; height: 28px; border: 1px solid #ccc; border-radius: 6px; background: #fff; font-size: 13px; padding: 0 4px; }
 
 /* status bar */
 #status {

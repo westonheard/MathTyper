@@ -8,13 +8,38 @@ type PMNode = {
   text?: string;
 };
 
-const PREAMBLE = `\\documentclass[11pt]{article}
+export type DocSettings = {
+  fontSize: 10 | 11 | 12;
+  font: "latin-modern" | "times" | "palatino" | "helvetica";
+  paper: "letter" | "a4";
+  marginIn: number;
+};
+
+export const DEFAULT_SETTINGS: DocSettings = {
+  fontSize: 11,
+  font: "latin-modern",
+  paper: "letter",
+  marginIn: 1,
+};
+
+const FONT_PACKAGES: Record<DocSettings["font"], string> = {
+  "latin-modern": "\\usepackage{lmodern}",
+  times: "\\usepackage{mathptmx}",
+  palatino: "\\usepackage{mathpazo}",
+  helvetica: "\\usepackage[scaled]{helvet}\n\\renewcommand{\\familydefault}{\\sfdefault}",
+};
+
+function preamble(s: DocSettings): string{
+  return `\\documentclass[${s.fontSize}pt]{article}
+\\usepackage[${s.paper === "a4" ? "a4paper" : "letterpaper"}, margin=${s.marginIn}in]{geometry}
 \\usepackage{amsmath}
 \\usepackage{amssymb}
 \\usepackage[normalem]{ulem}
+${FONT_PACKAGES[s.font]}
 
 \\begin{document}
 `;
+}
 
 //MathLive leaves \placeholder{} atoms in unfilled construct slots; empty braces compile fine.
 function cleanMath(latex: string): string{
@@ -118,6 +143,6 @@ function serializeBlocks(nodes: PMNode[] = []): string{
   return nodes.map(serializeBlock).join("");
 }
 
-export function docToLatex(doc: PMNode): string{
-  return PREAMBLE + "\n" + serializeBlocks(doc.content) + "\\end{document}\n";
+export function docToLatex(doc: PMNode, settings: DocSettings = DEFAULT_SETTINGS): string{
+  return preamble(settings) + "\n" + serializeBlocks(doc.content) + "\\end{document}\n";
 }

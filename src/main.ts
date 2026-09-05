@@ -6,12 +6,31 @@ import { MathfieldElement } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { MathBlock, MathInline } from "./math-nodes";
-import { docToLatex } from "./latex";
+import { DEFAULT_SETTINGS, docToLatex, type DocSettings } from "./latex";
 
 MathfieldElement.soundsDirectory = null;
 MathfieldElement.fontsDirectory = null; //fonts come from the bundled fonts.css
 
 const isTauri = "__TAURI_INTERNALS__" in window;
+
+//---------- document state ----------
+const settings: DocSettings = { ...DEFAULT_SETTINGS };
+
+const FONT_CSS: Record<DocSettings["font"], string> = {
+  "latin-modern": '"Latin Modern Roman", "CMU Serif", Georgia, serif',
+  times: '"Times New Roman", Times, serif',
+  palatino: 'Palatino, "Palatino Linotype", "Book Antiqua", serif',
+  helvetica: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+};
+
+function applySettings(){
+  const r = document.documentElement.style;
+  r.setProperty("--page-w", settings.paper === "a4" ? "210mm" : "8.5in");
+  r.setProperty("--page-min-h", settings.paper === "a4" ? "297mm" : "11in");
+  r.setProperty("--page-margin", `${settings.marginIn}in`);
+  r.setProperty("--doc-font", FONT_CSS[settings.font]);
+  r.setProperty("--doc-size", `${settings.fontSize}pt`);
+}
 
 //---------- editor ----------
 const editor = new Editor({
@@ -51,6 +70,33 @@ function addButton(b: Btn, cls = ""): HTMLButtonElement{
 }
 const sep = () => toolbar.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
 const addButtons = (list: Btn[]) => list.forEach((b) => addButton(b));
+
+//---------- popovers ----------
+function popover(anchor: HTMLElement): HTMLDivElement{
+  const panel = document.createElement("div");
+  panel.className = "popover";
+  panel.hidden = true;
+  document.querySelector("#app")!.appendChild(panel);
+  //keep the editor/math field focused when clicking inside, except in text inputs
+  panel.addEventListener("mousedown", (e) => {
+    const t = e.target as HTMLElement;
+    if(t.tagName !== "INPUT" && t.tagName !== "SELECT"){e.preventDefault();}
+  });
+  anchor.addEventListener("click", () => {
+    panel.hidden = !panel.hidden;
+    if(!panel.hidden){
+      const r = anchor.getBoundingClientRect();
+      panel.style.top = `${r.bottom + 6}px`;
+      panel.style.left = `${Math.min(r.left, window.innerWidth - panel.offsetWidth - 12)}px`;
+    }
+  });
+  document.addEventListener("mousedown", (e) => {
+    if(!panel.hidden && !panel.contains(e.target as Node) && !anchor.contains(e.target as Node)){
+      panel.hidden = true;
+    }
+  });
+  return panel;
+}
 
 //document-mutating buttons are inert while a math field holds focus (stale PM selection)
 const g = (fn: () => void) => () => {
@@ -93,6 +139,61 @@ addButtons([
 //right side of the toolbar
 toolbar.appendChild(Object.assign(document.createElement("span"), { className: "spacer" }));
 
+//page setup
+function settingsChanged(){
+  applySettings();
+  refresh();
+}
+const pageBtn = addButton({ label: "Page", title: "Page setup (font, size, margins)", run: () => {} }, "action");
+const pagePanel = popover(pageBtn);
+const syncPageControls: (() => void)[] = [];
+{
+  pagePanel.classList.add("page-setup");
+  const row = (label: string, control: HTMLElement) => {
+    const div = document.createElement("label");
+    div.innerHTML = `<span>${label}</span>`;
+    div.appendChild(control);
+    pagePanel.appendChild(div);
+  };
+  const sel = (options: [string, string][], get: () => string, onchange: (v: string) => void) => {
+    const s = document.createElement("select");
+    for(const [v, text] of options){
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = text;
+      s.appendChild(o);
+    }
+    s.value = get();
+    s.addEventListener("change", () => onchange(s.value));
+    syncPageControls.push(() => (s.value = get()));
+    return s;
+  };
+  row("Font", sel(
+    [["latin-modern", "Latin Modern (default)"], ["times", "Times"], ["palatino", "Palatino"], ["helvetica", "Helvetica (sans)"]],
+    () => settings.font,
+    (v) => { settings.font = v as DocSettings["font"]; settingsChanged(); }
+  ));
+  row("Font size", sel(
+    [["10", "10 pt"], ["11", "11 pt"], ["12", "12 pt"]],
+    () => String(settings.fontSize),
+    (v) => { settings.fontSize = Number(v) as DocSettings["fontSize"]; settingsChanged(); }
+  ));
+  row("Paper", sel(
+    [["letter", "US Letter"], ["a4", "A4"]],
+    () => settings.paper,
+    (v) => { settings.paper = v as DocSettings["paper"]; settingsChanged(); }
+  ));
+  const margin = document.createElement("input");
+  Object.assign(margin, { type: "number", min: "0.25", max: "2.5", step: "0.25", value: String(settings.marginIn) });
+  margin.addEventListener("change", () => {
+    settings.marginIn = Math.min(2.5, Math.max(0.25, Number(margin.value) || 1));
+    margin.value = String(settings.marginIn);
+    settingsChanged();
+  });
+  syncPageControls.push(() => (margin.value = String(settings.marginIn)));
+  row("Margin (in)", margin);
+}
+
 addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
 addButton({ label: "Compile PDF", title: "Compile with pdflatex and open", run: compilePdf }, "action");
 
@@ -100,7 +201,7 @@ addButton({ label: "Compile PDF", title: "Compile with pdflatex and open", run: 
 const pane = document.querySelector("#latex-pane")!;
 let timer: number | undefined;
 function refresh(){
-  pane.textContent = docToLatex(editor.getJSON() as any);
+  pane.textContent = docToLatex(editor.getJSON() as any, settings);
   for(const [el, b] of btnEls){el.classList.toggle("active", b.active?.() ?? false);}
 }
 editor.on("transaction", () => {
@@ -126,7 +227,7 @@ function download(name: string, contents: string){
 
 async function exportTex(){
   try{
-    const latex = docToLatex(editor.getJSON() as any);
+    const latex = docToLatex(editor.getJSON() as any, settings);
     if(!isTauri){
       download("document.tex", latex);
       return;
@@ -147,11 +248,12 @@ async function compilePdf(){
   }
   setStatus("Compiling…");
   try{
-    const pdf = await invoke<string>("compile_pdf", { latex: docToLatex(editor.getJSON() as any) });
+    const pdf = await invoke<string>("compile_pdf", { latex: docToLatex(editor.getJSON() as any, settings) });
     setStatus(`Compiled → ${pdf}`);
   }catch(e){
     setStatus(`pdflatex failed:\n${e}`, true);
   }
 }
 
+applySettings();
 refresh();
