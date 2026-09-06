@@ -17,6 +17,7 @@ const isTauri = "__TAURI_INTERNALS__" in window;
 
 //---------- document state ----------
 const settings: DocSettings = { ...DEFAULT_SETTINGS };
+let zoom = 1;
 
 const FONT_CSS: Record<DocSettings["font"], string> = {
   "latin-modern": '"Latin Modern Roman", "CMU Serif", Georgia, serif',
@@ -32,6 +33,7 @@ function applySettings(){
   r.setProperty("--page-margin", `${settings.marginIn}in`);
   r.setProperty("--doc-font", FONT_CSS[settings.font]);
   r.setProperty("--doc-size", `${settings.fontSize}pt`);
+  r.setProperty("--zoom", String(zoom));
 }
 
 //---------- editor ----------
@@ -261,6 +263,21 @@ function insertSymbol(latex: string){
 //right side of the toolbar
 toolbar.appendChild(Object.assign(document.createElement("span"), { className: "spacer" }));
 
+const zoomSel = document.createElement("select");
+zoomSel.title = "Zoom";
+for(const z of [50, 75, 90, 100, 125, 150, 200]){
+  const o = document.createElement("option");
+  o.value = String(z);
+  o.textContent = `${z}%`;
+  if(z === 100){o.selected = true;}
+  zoomSel.appendChild(o);
+}
+zoomSel.addEventListener("change", () => {
+  zoom = Number(zoomSel.value) / 100;
+  applySettings();
+});
+toolbar.appendChild(zoomSel);
+
 //page setup
 function settingsChanged(){
   applySettings();
@@ -318,6 +335,10 @@ const syncPageControls: (() => void)[] = [];
 
 addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
 addButton({ label: "Compile PDF", title: "Compile with pdflatex and open", run: compilePdf }, "action");
+
+addButton({ label: "⇥", title: "Show/hide LaTeX pane", run: () => {
+  document.querySelector("#panes")!.classList.toggle("pane-hidden");
+} });
 
 //---------- live LaTeX pane ----------
 const pane = document.querySelector("#latex-pane")!;
