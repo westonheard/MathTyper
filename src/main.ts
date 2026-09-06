@@ -1,12 +1,14 @@
 import "./styles.css";
 import "mathlive/fonts.css";
+import "mathlive/static.css";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
-import { MathfieldElement } from "mathlive";
+import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { MathBlock, MathInline } from "./math-nodes";
+import { MathBlock, MathInline, requestMathFocus } from "./math-nodes";
 import { DEFAULT_SETTINGS, docToLatex, type DocSettings } from "./latex";
+import { SYMBOL_CATEGORIES, type SymbolEntry } from "./symbols";
 
 MathfieldElement.soundsDirectory = null;
 MathfieldElement.fontsDirectory = null; //fonts come from the bundled fonts.css
@@ -135,6 +137,126 @@ addButtons([
   { label: "√x", title: "Inline math (⌘E)", run: g(() => editor.commands.insertMathInline()) },
   { label: "∑", title: "Display math (⌘⇧E)", run: g(() => editor.commands.insertMathBlock()) },
 ]);
+
+//---------- symbol palettes ----------
+//the math field being edited when a palette opens — search inputs steal DOM focus,
+//so activeElement alone can't be trusted at insert time.
+let paletteTarget: MathfieldElement | null = null;
+function captureMathTarget(){
+  const el = document.activeElement;
+  paletteTarget = el?.tagName === "MATH-FIELD" ? (el as MathfieldElement) : null;
+}
+//once the user is back in document text, a remembered field is stale
+editor.on("focus", () => {
+  paletteTarget = null;
+});
+
+function renderGlyph(latex: string): string{
+  try{
+    return convertLatexToMarkup(latex.replace(/#0/g, "\\square"));
+  }catch{
+    return latex.replace(/\\/g, "");
+  }
+}
+
+function symbolGrid(symbols: SymbolEntry[]): HTMLDivElement{
+  const grid = document.createElement("div");
+  grid.className = "symbol-grid";
+  for(const entry of symbols){
+    const el = document.createElement("button");
+    el.innerHTML = renderGlyph(entry.latex);
+    el.title = entry.aliases ? `${entry.latex} — ${entry.aliases.join(", ")}` : entry.latex;
+    el.addEventListener("click", () => insertSymbol(entry.latex));
+    grid.appendChild(el);
+  }
+  return grid;
+}
+
+//one small button per major category…
+for(const cat of SYMBOL_CATEGORIES.filter((c2) => c2.button)){
+  const b = addButton({ label: cat.button!, title: cat.label, run: () => {} }, "symbol-cat");
+  b.addEventListener("click", captureMathTarget);
+  const panel = popover(b);
+  panel.classList.add("symbol-panel");
+  panel.appendChild(symbolGrid(cat.symbols));
+}
+//…an Ω button holding everything else…
+{
+  const b = addButton({ label: "Ω", title: "More symbols", run: () => {} }, "symbol-cat");
+  b.addEventListener("click", captureMathTarget);
+  const panel = popover(b);
+  panel.classList.add("symbol-panel");
+  const body = document.createElement("div");
+  body.className = "symbol-body";
+  for(const cat of SYMBOL_CATEGORIES.filter((c2) => !c2.button)){
+    const section = document.createElement("div");
+    section.innerHTML = `<h4>${cat.label}</h4>`;
+    section.appendChild(symbolGrid(cat.symbols));
+    body.appendChild(section);
+  }
+  panel.appendChild(body);
+}
+//…and a search across all of it, matching commands and plain-English aliases.
+{
+  const b = addButton({ label: "🔍", title: "Search all symbols", run: () => {} }, "symbol-cat");
+  b.addEventListener("click", captureMathTarget);
+  const panel = popover(b);
+  panel.classList.add("symbol-panel");
+  const search = document.createElement("input");
+  search.placeholder = "Search symbols… (integral, not equal, matrix)";
+  search.className = "symbol-search";
+  panel.appendChild(search);
+  const results = document.createElement("div");
+  results.className = "symbol-body";
+  panel.appendChild(results);
+  const ALL = SYMBOL_CATEGORIES.flatMap((cat) =>
+    cat.symbols.map((sym) => ({ ...sym, category: cat.label.toLowerCase() }))
+  );
+  const update = () => {
+    const q = search.value.trim().toLowerCase();
+    results.innerHTML = "";
+    if(!q){
+      results.innerHTML = '<p class="hint">Type to search every symbol by name or meaning.</p>';
+      return;
+    }
+    const hits = ALL.filter(
+      (sym2) =>
+        sym2.latex.toLowerCase().includes(q) ||
+        sym2.category.includes(q) ||
+        sym2.aliases?.some((a) => a.includes(q))
+    ).slice(0, 80);
+    if(hits.length){results.appendChild(symbolGrid(hits));}
+    else{results.innerHTML = '<p class="hint">No matches.</p>';}
+  };
+  search.addEventListener("input", update);
+  b.addEventListener("click", () => {
+    if(!panel.hidden){
+      update();
+      search.focus();
+    }
+  });
+  update();
+}
+
+function insertSymbol(latex: string){
+  const active = document.activeElement;
+  const mf =
+    active?.tagName === "MATH-FIELD"
+      ? (active as MathfieldElement)
+      : paletteTarget?.isConnected
+        ? paletteTarget
+        : null;
+  if(mf){
+    mf.focus();
+    mf.insert(latex);
+    return;
+  }
+  //not in a math field: wrap it in a fresh inline math node. Constructs keep
+  //editable placeholder slots and get focus so the user can fill them.
+  const hasSlots = latex.includes("#0");
+  if(hasSlots){requestMathFocus();}
+  editor.chain().focus().insertMathInline(latex.replace(/#0/g, "\\placeholder{}")).run();
+}
 
 //right side of the toolbar
 toolbar.appendChild(Object.assign(document.createElement("span"), { className: "spacer" }));
