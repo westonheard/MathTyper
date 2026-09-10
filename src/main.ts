@@ -5,7 +5,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { MathBlock, MathInline, requestMathFocus } from "./math-nodes";
 import { DEFAULT_SETTINGS, docToLatex, type DocSettings } from "./latex";
 import { SYMBOL_CATEGORIES, type SymbolEntry } from "./symbols";
@@ -18,6 +18,7 @@ const isTauri = "__TAURI_INTERNALS__" in window;
 //---------- document state ----------
 const settings: DocSettings = { ...DEFAULT_SETTINGS };
 let zoom = 1;
+let filePath: string | null = null;
 
 const FONT_CSS: Record<DocSettings["font"], string> = {
   "latin-modern": '"Latin Modern Roman", "CMU Serif", Georgia, serif',
@@ -333,6 +334,8 @@ const syncPageControls: (() => void)[] = [];
   row("Margin (in)", margin);
 }
 
+addButton({ label: "Open", title: "Open document (⌘O)", run: openDoc }, "action");
+addButton({ label: "Save", title: "Save document (⌘S)", run: () => saveDoc() }, "action");
 addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
 addButton({ label: "Compile PDF", title: "Compile with pdflatex and open", run: compilePdf }, "action");
 
@@ -358,6 +361,91 @@ function setStatus(msg: string, isError = false){
   status.textContent = msg;
   status.classList.toggle("error", isError);
 }
+
+//---------- documents (.mtd = MathTyper document JSON) ----------
+function docFile(): string{
+  return JSON.stringify({ version: 1, settings, zoom, doc: editor.getJSON() });
+}
+
+function loadDocFile(text: string){
+  let data: any;
+  try{
+    data = JSON.parse(text);
+  }catch{
+    throw new Error("Not a MathTyper document (invalid JSON)");
+  }
+  if(!data || typeof data !== "object" || !data.doc){
+    throw new Error("Not a MathTyper document (no content)");
+  }
+  //validate before touching state. no update event, so the source file isn't
+  //immediately rewritten with whatever the parse produced
+  editor.commands.setContent(data.doc, { emitUpdate: false, errorOnInvalidContent: true });
+  Object.assign(settings, DEFAULT_SETTINGS, data.settings ?? {});
+  zoom = typeof data.zoom === "number" && data.zoom > 0 ? data.zoom : 1;
+  zoomSel.value = String(Math.round(zoom * 100));
+  applySettings();
+  syncPageControls.forEach((f) => f());
+  refresh();
+}
+
+//---------- new / open / save ----------
+
+async function openDoc(){
+  try{
+    if(isTauri){
+      const p = await openDialog({ filters: [{ name: "MathTyper document", extensions: ["mtd"] }], multiple: false });
+      if(typeof p !== "string"){return;}
+      loadDocFile(await invoke<string>("read_file", { path: p }));
+      filePath = p;
+      setStatus(`Opened ${p}`);
+    }else{
+      const input = Object.assign(document.createElement("input"), { type: "file", accept: ".mtd,application/json" });
+      input.addEventListener("change", async () => {
+        try{
+          if(input.files?.[0]){loadDocFile(await input.files[0].text());}
+        }catch(e){
+          setStatus(`Open failed: ${e}`, true);
+        }
+      });
+      input.click();
+    }
+  }catch(e){
+    setStatus(`Open failed: ${e}`, true);
+  }
+}
+
+async function saveDoc(saveAs = false){
+  try{
+    if(isTauri){
+      let p = filePath;
+      if(!p || saveAs){
+        p = await save({ defaultPath: "document.mtd", filters: [{ name: "MathTyper document", extensions: ["mtd"] }] });
+        if(!p){return;}
+      }
+      await invoke("write_file", { path: p, contents: docFile() });
+      filePath = p; //only committed once the write succeeded
+      setStatus(`Saved ${p}`);
+    }else{
+      download("document.mtd", docFile());
+    }
+  }catch(e){
+    setStatus(`Save failed: ${e}`, true);
+  }
+}
+
+window.addEventListener("keydown", (e) => {
+  if(!(e.metaKey || e.ctrlKey)){return;}
+  const k = e.key.toLowerCase();
+  if(k === "s"){
+    e.preventDefault();
+    //commit any in-progress page-setup input before serializing
+    if(document.activeElement instanceof HTMLInputElement){document.activeElement.blur();}
+    saveDoc(e.shiftKey);
+  }else if(k === "o"){
+    e.preventDefault();
+    openDoc();
+  }
+});
 
 //---------- export ----------
 function download(name: string, contents: string){

@@ -10,6 +10,11 @@ fn write_file(path: String, contents: String) -> Result<(), String>{
     fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn read_file(path: String) -> Result<String, String>{
+    fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 fn pdflatex() -> PathBuf{
     //apps started from Finder don't get the shell PATH, so check the usual install locations
     for p in [
@@ -59,7 +64,7 @@ pub fn run(){
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![write_file, compile_pdf])
+        .invoke_handler(tauri::generate_handler![write_file, read_file, compile_pdf])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
