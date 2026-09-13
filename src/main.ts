@@ -3,11 +3,13 @@ import "mathlive/fonts.css";
 import "mathlive/static.css";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
+import { Color, FontFamily, FontSize, TextStyle } from "@tiptap/extension-text-style";
+import { Highlight } from "@tiptap/extension-highlight";
 import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { MathBlock, MathInline, requestMathFocus } from "./math-nodes";
-import { DEFAULT_SETTINGS, docToLatex, type DocSettings } from "./latex";
+import { cssToHex, DEFAULT_SETTINGS, docToLatex, type DocSettings } from "./latex";
 import { SYMBOL_CATEGORIES, type SymbolEntry } from "./symbols";
 
 MathfieldElement.soundsDirectory = null;
@@ -42,6 +44,11 @@ const editor = new Editor({
   element: document.querySelector("#editor")!,
   extensions: [
     StarterKit,
+    TextStyle,
+    Color,
+    FontFamily,
+    FontSize,
+    Highlight.configure({ multicolor: true }),
     MathInline,
     MathBlock,
   ],
@@ -75,6 +82,19 @@ function addButton(b: Btn, cls = ""): HTMLButtonElement{
 }
 const sep = () => toolbar.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
 const addButtons = (list: Btn[]) => list.forEach((b) => addButton(b));
+function toolbarSelect(options: [string, string][], title: string, onchange: (v: string) => void): HTMLSelectElement{
+  const s = document.createElement("select");
+  s.title = title;
+  for(const [v, text] of options){
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = text;
+    s.appendChild(o);
+  }
+  s.addEventListener("change", () => onchange(s.value));
+  toolbar.appendChild(s);
+  return s;
+}
 
 //---------- popovers ----------
 function popover(anchor: HTMLElement): HTMLDivElement{
@@ -115,6 +135,50 @@ addButtons([
 ]);
 sep();
 
+//per-selection type, size, color, highlight (exports as \textrm/\textsf/\texttt,
+//\fontsize, \textcolor, and soul \hl)
+const familySel = toolbarSelect(
+  [["", "Doc font"], ["serif", "Serif"], ["sans-serif", "Sans"], ["monospace", "Mono"]],
+  "Font of the selected text",
+  (v) => { if(!inMathField()){(v ? c().focus().setFontFamily(v) : c().focus().unsetFontFamily()).run();} }
+);
+const sizeSel = toolbarSelect(
+  [["", "Size"], ...[8, 9, 10, 11, 12, 14, 17, 20, 24].map((n) => [`${n}pt`, `${n}`] as [string, string])],
+  "Size of the selected text (pt)",
+  (v) => { if(!inMathField()){(v ? c().focus().setFontSize(v) : c().focus().unsetFontSize()).run();} }
+);
+
+//no black/white swatches: each is invisible in one theme — "None" is the default color
+const TEXT_COLORS = ["#e03131", "#f08c00", "#f5c518", "#2f9e44", "#0b7285", "#1971c2", "#9c36b5", "#e64980", "#868e96", "#795548"];
+const HL_COLORS = ["#fff59d", "#b2f2bb", "#a5d8ff", "#fcc2d7", "#ffd8a8", "#e9d8fd", "#d3f9d8", "#ffe066"];
+
+function buildPalette(anchor: HTMLElement, colors: string[], h: { apply: (hex: string) => void; clear: () => void }){
+  const panel = popover(anchor);
+  panel.classList.add("palette");
+  const grid = document.createElement("div");
+  grid.className = "swatches";
+  for(const hex of colors){
+    const b = document.createElement("button");
+    b.className = "swatch";
+    b.style.background = hex;
+    b.title = hex;
+    b.addEventListener("click", () => { h.apply(hex); panel.hidden = true; });
+    grid.appendChild(b);
+  }
+  panel.appendChild(grid);
+  const row = document.createElement("div");
+  row.className = "palette-row";
+  const none = document.createElement("button");
+  none.textContent = "None";
+  none.addEventListener("click", () => { h.clear(); panel.hidden = true; });
+  const custom = document.createElement("input");
+  custom.type = "color";
+  custom.title = "Custom color…";
+  custom.addEventListener("change", () => { h.apply(custom.value); panel.hidden = true; });
+  row.append(none, custom);
+  panel.appendChild(row);
+}
+
 //style controls act on the document's text selection — while a math field holds
 //focus the stored ProseMirror selection is stale and styling would land elsewhere.
 function inMathField(): boolean{
@@ -125,6 +189,18 @@ function inMathField(): boolean{
   return false;
 }
 
+const colorBtn = addButton({ label: "A", title: "Text color", run: () => {} }, "color-a");
+buildPalette(colorBtn, TEXT_COLORS, {
+  apply: (hex) => { if(!inMathField()){c().focus().setColor(hex).run();} },
+  clear: () => { if(!inMathField()){c().focus().unsetColor().run();} },
+});
+const hlBtn = addButton({ label: "🖍", title: "Highlight color", run: () => {} });
+buildPalette(hlBtn, HL_COLORS, {
+  apply: (hex) => { if(!inMathField()){c().focus().setHighlight({ color: hex }).run();} },
+  clear: () => { if(!inMathField()){c().focus().unsetHighlight().run();} },
+});
+
+sep();
 addButtons([
   { label: "H1", title: "Section", run: g(() => c().focus().toggleHeading({ level: 1 }).run()), active: () => editor.isActive("heading", { level: 1 }) },
   { label: "H2", title: "Subsection", run: g(() => c().focus().toggleHeading({ level: 2 }).run()), active: () => editor.isActive("heading", { level: 2 }) },
@@ -349,6 +425,11 @@ let timer: number | undefined;
 function refresh(){
   pane.textContent = docToLatex(editor.getJSON() as any, settings);
   for(const [el, b] of btnEls){el.classList.toggle("active", b.active?.() ?? false);}
+  const ts = editor.getAttributes("textStyle");
+  familySel.value = ts.fontFamily ?? "";
+  sizeSel.value = ts.fontSize ?? "";
+  const color = ts.color ? cssToHex(ts.color) : null;
+  colorBtn.style.borderBottom = color ? `3px solid #${color}` : "";
 }
 editor.on("transaction", () => {
   clearTimeout(timer);
