@@ -53,6 +53,7 @@ const doc = {
         { type: "text", text: "big", marks: [{ type: "textStyle", attrs: { fontSize: "17pt" } }] },
         { type: "text", text: "mono", marks: [{ type: "textStyle", attrs: { fontFamily: "monospace" } }] },
         { type: "text", text: "marked", marks: [{ type: "highlight", attrs: { color: "rgb(255, 245, 157)" } }] },
+        { type: "text", text: "struck words", marks: [{ type: "strike" }, { type: "highlight", attrs: { color: "#fff59d" } }] },
         { type: "text", text: "mystery", marks: [{ type: "highlight", attrs: { color: "oklch(0.7 0.1 200)" } }] },
       ],
     },
@@ -86,6 +87,8 @@ for(const expected of [
   "{\\sethlcolor{hlFFF59D}\\hl{marked}}",
   "\\definecolor{hlFFF59D}{HTML}{FFF59D}",
   "\\usepackage{soul}",
+  //strike+highlight splits per word so soul survives ulem
+  "\\sout{{\\sethlcolor{hlFFF59D}\\hl{struck}}}{\\sethlcolor{hlFFF59D}\\hl{ }}\\sout{{\\sethlcolor{hlFFF59D}\\hl{words}}}",
   //embedded \end{verbatim} gets its token broken so the environment survives
   "safe code\n\\end {verbatim}\nmore code",
   "\\begin{itemize}\n  \\item one\n  \\item two\n\\end{itemize}",

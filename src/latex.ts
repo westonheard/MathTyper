@@ -127,7 +127,14 @@ function serializeText(node: PMNode): string{
     if(hex){
       usedHighlights.add(hex);
       const hl = (s: string) => `{\\sethlcolor{hl${hex}}\\hl{${s}}}`;
-      out = hl(out);
+      const strikeIdx = basic.indexOf("\\sout");
+      if(strikeIdx >= 0){
+        //ulem's \sout over \hl breaks on any space — strike word by word instead
+        basic.splice(strikeIdx, 1);
+        out = out.split(" ").map((w) => (w ? `\\sout{${hl(w)}}` : "")).join(hl(" "));
+      }else{
+        out = hl(out);
+      }
     }
     //unknown color: drop the highlight — never emit a black bar
   }
