@@ -415,6 +415,14 @@ addButton({ label: "Save", title: "Save document (⌘S)", run: () => saveDoc() }
 addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
 addButton({ label: "Compile PDF", title: "Compile with pdflatex and open", run: compilePdf }, "action");
 
+addButton({ label: "◐", title: "Dark mode", run: () => {
+  const on = document.body.classList.toggle("dark");
+  try{ localStorage.setItem("mt-theme", on ? "dark" : "light"); }catch{}
+} });
+try{
+  if(localStorage.getItem("mt-theme") === "dark"){document.body.classList.add("dark");}
+}catch{}
+
 addButton({ label: "⇥", title: "Show/hide LaTeX pane", run: () => {
   document.querySelector("#panes")!.classList.toggle("pane-hidden");
 } });

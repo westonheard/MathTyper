@@ -126,3 +126,38 @@ math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { displ
   background: #fff; border-top: 1px solid #ddd; white-space: pre-wrap;
 }
 #status.error { color: #b3261e; }
+
+/* ---------- dark mode ----------
+   Editor theme only: the page goes near-black, default text goes white, and
+   explicitly colored text keeps its color (inline styles win). Export is untouched. */
+body.dark { background: #141414; color: #e6e6e6; }
+body.dark #toolbar, body.dark #status { background: #1e1e1e; border-color: #333; }
+body.dark #status { color: #d8d8d8; }
+body.dark #status.error { color: #ff8a80; }
+body.dark #toolbar button { color: #e6e6e6; }
+body.dark #toolbar button:hover { background: #333; }
+body.dark #toolbar button.active { background: #2b3a55; border-color: #3d5580; }
+body.dark #toolbar button.action, body.dark #toolbar select { background: #2a2a2a; border-color: #444; color: #e6e6e6; }
+body.dark #toolbar .sep { background: #3a3a3a; }
+body.dark #editor { background: #0d0d0d; border-color: #2e2e2e; color: #ececec; box-shadow: none; }
+body.dark #latex-pane { border-color: #333; }
+body.dark .ProseMirror code { background: #262626; }
+body.dark .popover { background: #222; border-color: #444; color: #e6e6e6; }
+body.dark .symbol-grid button { color: #e6e6e6; }
+body.dark .symbol-grid button:hover { background: #2b3a55; border-color: #3d5580; }
+body.dark .symbol-search, body.dark .page-setup select, body.dark .page-setup input,
+body.dark .palette-row button { background: #2a2a2a; border-color: #444; color: #e6e6e6; }
+body.dark .symbol-body h4 { color: #9a9a9a; }
+body.dark .swatch { border-color: rgba(255,255,255,.3); }
+/* equations in dark mode: black field, white math */
+body.dark math-field {
+  background: #000;
+  color: #fff;
+  border-color: #2e2e2e;
+  --caret-color: #fff;
+  --placeholder-color: #9a9a9a;
+  --selection-background-color: #33518a;
+  --selection-color: #fff;
+  --contains-highlight-background-color: #10131a;
+}
+body.dark math-field:focus-within { background: #000; border-color: #41598a; }
