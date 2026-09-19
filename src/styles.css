@@ -64,6 +64,24 @@ body {
    !important: the Highlight extension writes inline "color: inherit" on every mark */
 .ProseMirror mark { color: #1a1a1a !important; border-radius: 2px; padding: 0 1px; }
 
+/* tables */
+.ProseMirror table { border-collapse: collapse; width: 100%; margin: 10px 0; table-layout: fixed; }
+.ProseMirror td, .ProseMirror th { border: 1px solid #9a9a9a; padding: 4px 8px; vertical-align: top; min-width: 3ch; }
+.ProseMirror th { background: #f3f1ec; font-weight: 600; text-align: left; }
+.ProseMirror td > p, .ProseMirror th > p { margin: 0; }
+/* booktabs preview: horizontal rules only */
+.ProseMirror table[data-table-style="booktabs"] { border-top: 2px solid #555; border-bottom: 2px solid #555; }
+.ProseMirror table[data-table-style="booktabs"] td,
+.ProseMirror table[data-table-style="booktabs"] th { border: none; }
+.ProseMirror table[data-table-style="booktabs"] th { border-bottom: 1.5px solid #555; background: none; }
+.ProseMirror .selectedCell { background: rgba(122, 165, 248, .18); }
+.menu-panel { display: grid; gap: 6px; width: 200px; }
+.menu-panel button { height: 28px; border: 1px solid #ccc; border-radius: 6px; background: #fafafa; cursor: pointer; font-size: 12px; text-align: left; padding: 0 10px; }
+.menu-panel button:hover { background: #eef3ff; }
+.menu-panel button.danger { color: #b3261e; }
+.table-insert { display: flex; align-items: center; gap: 6px; justify-content: center; }
+.table-insert input { width: 60px; height: 28px; border: 1px solid #ccc; border-radius: 6px; padding: 0 6px; }
+
 /* live LaTeX pane */
 #latex-pane {
   margin: 0; padding: 20px 24px; overflow: auto;
@@ -161,3 +179,11 @@ body.dark math-field {
   --contains-highlight-background-color: #10131a;
 }
 body.dark math-field:focus-within { background: #000; border-color: #41598a; }
+body.dark .ProseMirror td, body.dark .ProseMirror th { border-color: #555; }
+body.dark .ProseMirror th { background: #1f1f1f; }
+body.dark .ProseMirror table[data-table-style="booktabs"] { border-color: #aaa; }
+body.dark .ProseMirror table[data-table-style="booktabs"] th { border-bottom-color: #aaa; background: none; }
+body.dark .menu-panel button { background: #2a2a2a; border-color: #444; color: #e6e6e6; }
+body.dark .menu-panel button:hover { background: #2b3a55; }
+body.dark .menu-panel button.danger { color: #ff8a80; }
+body.dark .table-insert input { background: #2a2a2a; border-color: #444; color: #e6e6e6; }

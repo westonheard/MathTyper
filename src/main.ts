@@ -5,6 +5,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Color, FontFamily, FontSize, TextStyle } from "@tiptap/extension-text-style";
 import { Highlight } from "@tiptap/extension-highlight";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
@@ -49,6 +50,22 @@ const editor = new Editor({
     FontFamily,
     FontSize,
     Highlight.configure({ multicolor: true }),
+    //per-table grid vs booktabs choice, carried into the LaTeX export
+    Table.extend({
+      addAttributes(){
+        return {
+          ...this.parent?.(),
+          tableStyle: {
+            default: "grid",
+            parseHTML: (el: HTMLElement) => el.dataset.tableStyle ?? "grid",
+            renderHTML: (attrs: any) => ({ "data-table-style": attrs.tableStyle }),
+          },
+        };
+      },
+    }),
+    TableRow,
+    TableHeader,
+    TableCell,
     MathInline,
     MathBlock,
   ],
@@ -216,6 +233,56 @@ addButtons([
   { label: "√x", title: "Inline math (⌘E)", run: g(() => editor.commands.insertMathInline()) },
   { label: "∑", title: "Display math (⌘⇧E)", run: g(() => editor.commands.insertMathBlock()) },
 ]);
+
+//---------- tables ----------
+const tableBtn = addButton({ label: "⊞", title: "Table", run: () => {} });
+const tablePanel = popover(tableBtn);
+tablePanel.classList.add("menu-panel");
+function renderTablePanel(){
+  tablePanel.innerHTML = "";
+  const btn = (label: string, run: () => void) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      if(inMathField()){return;}
+      run();
+      renderTablePanel();
+      refresh();
+    });
+    tablePanel.appendChild(b);
+    return b;
+  };
+  if(editor.isActive("table")){
+    btn("+ Row above", () => c().focus().addRowBefore().run());
+    btn("+ Row below", () => c().focus().addRowAfter().run());
+    btn("+ Column left", () => c().focus().addColumnBefore().run());
+    btn("+ Column right", () => c().focus().addColumnAfter().run());
+    btn("− Delete row", () => c().focus().deleteRow().run());
+    btn("− Delete column", () => c().focus().deleteColumn().run());
+    const style = editor.getAttributes("table").tableStyle ?? "grid";
+    btn(style === "grid" ? "Style: Grid → Booktabs" : "Style: Booktabs → Grid", () =>
+      c().focus().updateAttributes("table", { tableStyle: style === "grid" ? "booktabs" : "grid" }).run()
+    );
+    const del = btn("✕ Delete table", () => { c().focus().deleteTable().run(); tablePanel.hidden = true; });
+    del.classList.add("danger");
+  }else{
+    const rows = Object.assign(document.createElement("input"), { type: "number", min: "1", max: "20", value: "3", title: "Rows" });
+    const cols = Object.assign(document.createElement("input"), { type: "number", min: "1", max: "10", value: "3", title: "Columns" });
+    const wrap = document.createElement("div");
+    wrap.className = "table-insert";
+    wrap.append(rows, document.createTextNode("×"), cols);
+    tablePanel.appendChild(wrap);
+    btn("Insert table", () => {
+      c().focus().insertTable({
+        rows: Math.max(1, Math.min(20, Number(rows.value) || 3)),
+        cols: Math.max(1, Math.min(10, Number(cols.value) || 3)),
+        withHeaderRow: true,
+      }).run();
+      tablePanel.hidden = true;
+    });
+  }
+}
+tableBtn.addEventListener("click", () => { if(!tablePanel.hidden){renderTablePanel();} });
 
 //---------- symbol palettes ----------
 //the math field being edited when a palette opens — search inputs steal DOM focus,
@@ -433,6 +500,7 @@ let timer: number | undefined;
 function refresh(){
   pane.textContent = docToLatex(editor.getJSON() as any, settings);
   for(const [el, b] of btnEls){el.classList.toggle("active", b.active?.() ?? false);}
+  if(!tablePanel.hidden){renderTablePanel();} //keep the open panel in sync with keyboard edits
   const ts = editor.getAttributes("textStyle");
   familySel.value = ts.fontFamily ?? "";
   sizeSel.value = ts.fontSize ?? "";

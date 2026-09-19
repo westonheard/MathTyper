@@ -55,11 +55,64 @@ const doc = {
         { type: "text", text: "marked", marks: [{ type: "highlight", attrs: { color: "rgb(255, 245, 157)" } }] },
         { type: "text", text: "struck words", marks: [{ type: "strike" }, { type: "highlight", attrs: { color: "#fff59d" } }] },
         { type: "text", text: "mystery", marks: [{ type: "highlight", attrs: { color: "oklch(0.7 0.1 200)" } }] },
+        { type: "text", text: "chem ", marks: [] },
+        { type: "mathInline", attrs: { latex: "\\ce{H2O}" } },
+      ],
+    },
+    {
+      type: "table",
+      attrs: { tableStyle: "grid" },
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "n" }] }] },
+            { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "value" }] }] },
+          ],
+        },
+        {
+          type: "tableRow",
+          content: [
+            { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "1" }] }] },
+            {
+              type: "tableCell",
+              content: [
+                { type: "paragraph", content: [{ type: "mathInline", attrs: { latex: "\\frac{1}{2}" } }] },
+                { type: "mathBlock", attrs: { latex: "x^2" } },
+                {
+                  type: "bulletList",
+                  content: [
+                    { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "a" }] }] },
+                    { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "b" }] }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
       ],
     },
     {
       type: "codeBlock",
       content: [{ type: "text", text: "safe code\n\\end{verbatim}\nmore code" }],
+    },
+    {
+      type: "table",
+      attrs: { tableStyle: "booktabs" },
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "a" }] }] },
+          ],
+        },
+        {
+          type: "tableRow",
+          content: [
+            { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "b" }] }] },
+          ],
+        },
+      ],
     },
     {
       type: "bulletList",
@@ -89,6 +142,14 @@ for(const expected of [
   "\\usepackage{soul}",
   //strike+highlight splits per word so soul survives ulem
   "\\sout{{\\sethlcolor{hlFFF59D}\\hl{struck}}}{\\sethlcolor{hlFFF59D}\\hl{ }}\\sout{{\\sethlcolor{hlFFF59D}\\hl{words}}}",
+  //\ce triggers the mhchem package line
+  "\\usepackage[version=4]{mhchem}",
+  "\\begin{tabular}{|l|l|}",
+  "\\textbf{n} & \\textbf{value} \\\\",
+  "1 & $\\frac{1}{2}$ $x^2$ a; b \\\\",
+  "\\begin{tabular}{l}",
+  "\\toprule\n\\textbf{a} \\\\\n\\midrule\nb \\\\\n\\bottomrule",
+  "\\usepackage{booktabs}",
   //embedded \end{verbatim} gets its token broken so the environment survives
   "safe code\n\\end {verbatim}\nmore code",
   "\\begin{itemize}\n  \\item one\n  \\item two\n\\end{itemize}",

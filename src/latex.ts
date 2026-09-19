@@ -29,10 +29,11 @@ const FONT_PACKAGES: Record<DocSettings["font"], string> = {
   helvetica: "\\usepackage[scaled]{helvet}\n\\renewcommand{\\familydefault}{\\sfdefault}",
 };
 
-function preamble(s: DocSettings, highlightColors: Set<string>): string{
+function preamble(s: DocSettings, highlightColors: Set<string>, packages: Set<string>): string{
   const defs = [...highlightColors]
     .map((hex) => `\\definecolor{hl${hex}}{HTML}{${hex}}`)
     .join("\n");
+  const extra = [...packages].sort().join("\n");
   return `\\documentclass[${s.fontSize}pt]{article}
 \\usepackage[${s.paper === "a4" ? "a4paper" : "letterpaper"}, margin=${s.marginIn}in]{geometry}
 \\usepackage{amsmath}
@@ -40,7 +41,7 @@ function preamble(s: DocSettings, highlightColors: Set<string>): string{
 \\usepackage[normalem]{ulem}
 \\usepackage{xcolor}
 \\usepackage{soul}
-${FONT_PACKAGES[s.font]}${defs ? "\n" + defs : ""}
+${FONT_PACKAGES[s.font]}${extra ? "\n" + extra : ""}${defs ? "\n" + defs : ""}
 
 \\begin{document}
 `;
@@ -81,9 +82,17 @@ export function fontSizePt(v: string): number{
 
 //collected during serialization, reset per docToLatex call
 let usedHighlights: Set<string> = new Set();
+let usedPackages: Set<string> = new Set();
+
+function scanPackages(latex: string){
+  if(/\\(?:bcancel|xcancel|cancel)\{/.test(latex)){usedPackages.add("\\usepackage{cancel}");}
+  if(/\\[Bb]raket\b|\\[Bb]ra\b|\\[Kk]et\b/.test(latex)){usedPackages.add("\\usepackage{braket}");}
+  if(/\\ce\{/.test(latex)){usedPackages.add("\\usepackage[version=4]{mhchem}");}
+}
 
 //MathLive leaves \placeholder{} atoms in unfilled construct slots; empty braces compile fine.
 function cleanMath(latex: string): string{
+  scanPackages(latex);
   return latex.replace(/\\placeholder\{\}/g, "");
 }
 
@@ -200,9 +209,69 @@ function serializeBlock(node: PMNode): string{
     }
     case "horizontalRule":
       return "\\par\\noindent\\hrulefill\\par\n\n";
+    case "table":
+      return serializeTable(node);
     default:
       return "";
   }
+}
+
+//table cells hold blocks but tabular l-columns can't take \\ or environments —
+//everything flattens to inline content: display math becomes $...$, lists become
+//"; "-joined items, code becomes \texttt.
+//ponytail: merged cells (colspan/rowspan) not supported; add \multicolumn if needed.
+function inlineifyBlock(b: PMNode): string{
+  switch(b.type){
+    case "mathBlock": {
+      const m = cleanMath(b.attrs?.latex ?? "");
+      return m.trim() ? `$${m}$` : "";
+    }
+    case "bulletList":
+    case "orderedList":
+      return (b.content ?? []).map(inlineifyBlock).filter(Boolean).join("; ");
+    case "listItem":
+    case "blockquote":
+      return (b.content ?? []).map(inlineifyBlock).filter(Boolean).join(" ");
+    case "codeBlock":
+      return `\\texttt{${escapeLatex((b.content ?? []).map((n) => n.text ?? "").join(""))}}`;
+    default: //paragraph, heading, anything else with inline content
+      return serializeInline(b.content).replace(/\\\\\n/g, " ").trim();
+  }
+}
+
+function serializeCellBlocks(nodes: PMNode[] = []): string{
+  return nodes.map(inlineifyBlock).filter(Boolean).join(" ");
+}
+
+function serializeTable(node: PMNode): string{
+  const booktabs = node.attrs?.tableStyle === "booktabs";
+  const rows = node.content ?? [];
+  const ncols = Math.max(1, ...rows.map((r) => (r.content ?? []).length));
+  const spec = booktabs ? "l".repeat(ncols) : "|" + Array(ncols).fill("l").join("|") + "|";
+  const headerFirst =
+    (rows[0]?.content ?? []).length > 0 && (rows[0].content ?? []).every((c) => c.type === "tableHeader");
+  const lines = rows.map(
+    (row) =>
+      (row.content ?? [])
+        .map((cell) => {
+          const inner = serializeCellBlocks(cell.content);
+          return cell.type === "tableHeader" ? `\\textbf{${inner}}` : inner;
+        })
+        .join(" & ") + " \\\\"
+  );
+  let body: string;
+  if(booktabs){
+    usedPackages.add("\\usepackage{booktabs}");
+    body =
+      "\\toprule\n" +
+      (headerFirst && lines.length > 1
+        ? lines[0] + "\n\\midrule\n" + lines.slice(1).join("\n")
+        : lines.join("\n")) +
+      "\n\\bottomrule";
+  }else{
+    body = "\\hline\n" + lines.join("\n\\hline\n") + "\n\\hline";
+  }
+  return `\\begin{center}\n\\begin{tabular}{${spec}}\n${body}\n\\end{tabular}\n\\end{center}\n\n`;
 }
 
 function wrapList(env: string, items: PMNode[] = []): string{
@@ -219,6 +288,7 @@ function serializeBlocks(nodes: PMNode[] = []): string{
 
 export function docToLatex(doc: PMNode, settings: DocSettings = DEFAULT_SETTINGS): string{
   usedHighlights = new Set();
-  const body = serializeBlocks(doc.content); //fills usedHighlights
-  return preamble(settings, usedHighlights) + "\n" + body + "\\end{document}\n";
+  usedPackages = new Set();
+  const body = serializeBlocks(doc.content); //fills usedHighlights + usedPackages
+  return preamble(settings, usedHighlights, usedPackages) + "\n" + body + "\\end{document}\n";
 }
