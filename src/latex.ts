@@ -96,6 +96,22 @@ function cleanMath(latex: string): string{
   return latex.replace(/\\placeholder\{\}/g, "");
 }
 
+//common pasted Unicode that pdflatex can't take in text mode → LaTeX equivalents.
+const UNICODE_MAP: Record<string, string> = {
+  "−": "$-$", "≤": "$\\le$", "≥": "$\\ge$", "≠": "$\\ne$", "±": "$\\pm$",
+  "≈": "$\\approx$", "∞": "$\\infty$", "∈": "$\\in$", "∂": "$\\partial$", "√": "$\\surd$",
+  "∑": "$\\Sigma$", "∏": "$\\Pi$", "⇒": "$\\Rightarrow$", "⇐": "$\\Leftarrow$", "↔": "$\\leftrightarrow$",
+  α: "$\\alpha$", β: "$\\beta$", γ: "$\\gamma$", δ: "$\\delta$", ε: "$\\varepsilon$",
+  ζ: "$\\zeta$", η: "$\\eta$", θ: "$\\theta$", ι: "$\\iota$", κ: "$\\kappa$",
+  λ: "$\\lambda$", μ: "$\\mu$", ν: "$\\nu$", ξ: "$\\xi$", π: "$\\pi$", ρ: "$\\rho$",
+  σ: "$\\sigma$", ς: "$\\varsigma$", τ: "$\\tau$", υ: "$\\upsilon$", φ: "$\\varphi$",
+  χ: "$\\chi$", ψ: "$\\psi$", ω: "$\\omega$",
+  Γ: "$\\Gamma$", Δ: "$\\Delta$", Θ: "$\\Theta$", Λ: "$\\Lambda$", Ξ: "$\\Xi$",
+  Π: "$\\Pi$", Σ: "$\\Sigma$", Υ: "$\\Upsilon$", Φ: "$\\Phi$", Ψ: "$\\Psi$", Ω: "$\\Omega$",
+};
+//Beyond-Latin-1 characters verified to compile under the generated preamble.
+const UNICODE_OK = new Set(["–", "—", "‘", "’", "“", "”", "…", "→"]);
+
 export function escapeLatex(text: string): string{
   return text
     .replace(/\\/g, "\u0000")
@@ -105,7 +121,12 @@ export function escapeLatex(text: string): string{
     .replace(/</g, "\\textless{}")
     .replace(/>/g, "\\textgreater{}")
     .replace(/\|/g, "\\textbar{}")
-    .replace(/\u0000/g, "\\textbackslash{}");
+    .replace(/\u0000/g, "\\textbackslash{}")
+    //last: exotic Unicode with no mapping aborts pdflatex, substitute a visible "?"
+    //ponytail: extend UNICODE_MAP as users hit real characters
+    .replace(/[\u0100-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]/g, (ch) =>
+      UNICODE_MAP[ch] ?? (UNICODE_OK.has(ch) ? ch : "?")
+    );
 }
 
 const FAMILY_CMD: Record<string, string> = {

@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { cssToHex, docToLatex, escapeLatex, fontSizePt } from "./latex.ts";
 
+assert.equal(escapeLatex("5 − 3 and π ≤ Ω, plus 😀 and “quotes”"), '5 $-$ 3 and $\\pi$ $\\le$ $\\Omega$, plus ?? and “quotes”');
 assert.equal(cssToHex("rgb(300, 0, 0)"), null);
 assert.equal(cssToHex("red"), "FF0000");
 assert.equal(cssToHex("rgb(255, 0, 0)"), "FF0000");
