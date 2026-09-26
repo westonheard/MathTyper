@@ -1,18 +1,31 @@
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 #[tauri::command]
 fn write_file(path: String, contents: String) -> Result<(), String>{
-    fs::write(&path, contents).map_err(|e| e.to_string())
+    let p = Path::new(&path);
+    if let Some(parent) = p.parent(){
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    //temp + rename so a crash mid save can never truncate the only copy
+    let mut tmp = p.as_os_str().to_owned();
+    tmp.push(".tmp");
+    fs::write(&tmp, contents).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, p).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String>{
     fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle){
+    app.exit(0);
 }
 
 fn pdflatex() -> PathBuf{
@@ -64,7 +77,7 @@ pub fn run(){
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![write_file, read_file, compile_pdf])
+        .invoke_handler(tauri::generate_handler![write_file, read_file, compile_pdf, quit_app])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

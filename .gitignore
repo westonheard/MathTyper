@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 mathquill/
+
+# documents made while testing
+*.mtd

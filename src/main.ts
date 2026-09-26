@@ -8,6 +8,8 @@ import { Highlight } from "@tiptap/extension-highlight";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
+import { documentDir } from "@tauri-apps/api/path";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { MathBlock, MathInline, requestMathFocus } from "./math-nodes";
 import { cssToHex, DEFAULT_SETTINGS, docToLatex, type DocSettings } from "./latex";
@@ -419,6 +421,7 @@ for(const z of [50, 75, 90, 100, 125, 150, 200]){
 zoomSel.addEventListener("change", () => {
   zoom = Number(zoomSel.value) / 100;
   applySettings();
+  scheduleAutosave();
 });
 toolbar.appendChild(zoomSel);
 
@@ -426,6 +429,7 @@ toolbar.appendChild(zoomSel);
 function settingsChanged(){
   applySettings();
   refresh();
+  scheduleAutosave();
 }
 const pageBtn = addButton({ label: "Page", title: "Page setup (font, size, margins)", run: () => {} }, "action");
 const pagePanel = popover(pageBtn);
@@ -514,9 +518,16 @@ editor.on("transaction", () => {
 
 //---------- status ----------
 const status = document.querySelector("#status")!;
+let lastErrorAt = 0;
 function setStatus(msg: string, isError = false){
+  if(isError){lastErrorAt = Date.now();}
   status.textContent = msg;
   status.classList.toggle("error", isError);
+}
+//routine notices (autosave ticks) must not bury a recent error
+function setStatusSoft(msg: string){
+  if(Date.now() - lastErrorAt < 8000){return;}
+  setStatus(msg);
 }
 
 //---------- documents (.mtd = MathTyper document JSON) ----------
@@ -545,10 +556,79 @@ function loadDocFile(text: string){
   refresh();
 }
 
+//every document lives in a real file from its first edit, no save dialog needed
+function two(n: number){
+  return String(n).padStart(2, "0");
+}
+async function allocateAutosavePath(): Promise<string>{
+  const d = new Date();
+  const name = `Untitled ${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}.${two(d.getMinutes())}.${two(d.getSeconds())}.mtd`;
+  return `${await documentDir()}/MathTyper/${name}`;
+}
+
+//---------- autosave ----------
+let autosaveTimer: number | undefined;
+let autosavePending = false; //an edit is waiting on the debounce
+let autosaving = false;
+function scheduleAutosave(){
+  autosavePending = true;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = window.setTimeout(autosave, 1500);
+}
+async function autosave(){
+  if(autosaving){
+    scheduleAutosave();
+    return;
+  }
+  autosaving = true;
+  autosavePending = false;
+  try{
+    const contents = docFile();
+    if(isTauri){
+      if(!filePath){filePath = await allocateAutosavePath();}
+      const target = filePath;
+      await invoke("write_file", { path: target, contents });
+      setStatusSoft(`Autosaved ${new Date().toLocaleTimeString()} — ${target}`);
+    }else{
+      localStorage.setItem("mt-draft", contents);
+      setStatusSoft(`Draft autosaved ${new Date().toLocaleTimeString()} (browser storage)`);
+    }
+  }catch(e){
+    setStatus(`Autosave failed: ${e}`, true);
+  }finally{
+    autosaving = false;
+  }
+}
+//write the outgoing document's pending edits before switching documents or quitting
+async function flushAutosave(){
+  clearTimeout(autosaveTimer);
+  if(autosavePending){await autosave();}
+}
+editor.on("update", scheduleAutosave);
+
+//flush the tail of the last edit on quit/close
+if(isTauri){
+  getCurrentWindow().onCloseRequested(async (e) => {
+    if(autosavePending || autosaving){
+      e.preventDefault();
+      await flushAutosave();
+      await invoke("quit_app");
+    }
+  });
+}else{
+  window.addEventListener("beforeunload", () => {
+    if(autosavePending){
+      clearTimeout(autosaveTimer);
+      try{ localStorage.setItem("mt-draft", docFile()); }catch{}
+    }
+  });
+}
+
 //---------- new / open / save ----------
 
 async function openDoc(){
   try{
+    await flushAutosave(); //the outgoing doc keeps its last edits
     if(isTauri){
       const p = await openDialog({ filters: [{ name: "MathTyper document", extensions: ["mtd"] }], multiple: false });
       if(typeof p !== "string"){return;}
