@@ -10,6 +10,7 @@ import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { EditorState } from "@tiptap/pm/state";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { MathBlock, MathInline, requestMathFocus } from "./math-nodes";
 import { cssToHex, DEFAULT_SETTINGS, docToLatex, type DocSettings } from "./latex";
@@ -481,6 +482,7 @@ const syncPageControls: (() => void)[] = [];
   row("Margin (in)", margin);
 }
 
+addButton({ label: "New", title: "New document (⌘N)", run: () => newDoc() }, "action");
 addButton({ label: "Open", title: "Open document (⌘O)", run: openDoc }, "action");
 addButton({ label: "Save", title: "Save document (⌘S)", run: () => saveDoc() }, "action");
 addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
@@ -548,12 +550,24 @@ function loadDocFile(text: string){
   //validate before touching state. no update event, so the source file isn't
   //immediately rewritten with whatever the parse produced
   editor.commands.setContent(data.doc, { emitUpdate: false, errorOnInvalidContent: true });
+  clearHistory();
   Object.assign(settings, DEFAULT_SETTINGS, data.settings ?? {});
   zoom = typeof data.zoom === "number" && data.zoom > 0 ? data.zoom : 1;
   zoomSel.value = String(Math.round(zoom * 100));
   applySettings();
   syncPageControls.forEach((f) => f());
   refresh();
+}
+
+//undo must not cross document boundaries, rebuild the state so history starts fresh
+function clearHistory(){
+  editor.view.updateState(EditorState.create({ doc: editor.state.doc, plugins: editor.state.plugins }));
+}
+
+function rememberLastFile(){
+  try{
+    if(filePath){localStorage.setItem("mt-last-file", filePath);}
+  }catch{}
 }
 
 //every document lives in a real file from its first edit, no save dialog needed
@@ -570,7 +584,9 @@ async function allocateAutosavePath(): Promise<string>{
 let autosaveTimer: number | undefined;
 let autosavePending = false; //an edit is waiting on the debounce
 let autosaving = false;
+let userEdited = false;
 function scheduleAutosave(){
+  userEdited = true;
   autosavePending = true;
   clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(autosave, 1500);
@@ -588,6 +604,7 @@ async function autosave(){
       if(!filePath){filePath = await allocateAutosavePath();}
       const target = filePath;
       await invoke("write_file", { path: target, contents });
+      rememberLastFile();
       setStatusSoft(`Autosaved ${new Date().toLocaleTimeString()} — ${target}`);
     }else{
       localStorage.setItem("mt-draft", contents);
@@ -625,6 +642,20 @@ if(isTauri){
 }
 
 //---------- new / open / save ----------
+async function newDoc(){
+  await flushAutosave(); //the outgoing doc keeps its last edits
+  editor.commands.clearContent(false);
+  clearHistory();
+  Object.assign(settings, DEFAULT_SETTINGS);
+  zoom = 1;
+  zoomSel.value = "100";
+  filePath = null;
+  applySettings();
+  syncPageControls.forEach((f) => f());
+  refresh();
+  await autosave(); //desktop: allocates the new file now, browser: fresh draft
+  editor.commands.focus();
+}
 
 async function openDoc(){
   try{
@@ -634,6 +665,7 @@ async function openDoc(){
       if(typeof p !== "string"){return;}
       loadDocFile(await invoke<string>("read_file", { path: p }));
       filePath = p;
+      rememberLastFile();
       setStatus(`Opened ${p}`);
     }else{
       const input = Object.assign(document.createElement("input"), { type: "file", accept: ".mtd,application/json" });
@@ -661,6 +693,7 @@ async function saveDoc(saveAs = false){
       }
       await invoke("write_file", { path: p, contents: docFile() });
       filePath = p; //only committed once the write succeeded
+      rememberLastFile();
       setStatus(`Saved ${p}`);
     }else{
       download("document.mtd", docFile());
@@ -681,6 +714,9 @@ window.addEventListener("keydown", (e) => {
   }else if(k === "o"){
     e.preventDefault();
     openDoc();
+  }else if(k === "n"){
+    e.preventDefault();
+    newDoc();
   }
 });
 
@@ -725,3 +761,29 @@ async function compilePdf(){
 
 applySettings();
 refresh();
+if(import.meta.env.DEV){(window as any).mt = { docFile, loadDocFile, newDoc, autosave };}
+
+//reopen the last document (desktop) or restore the browser draft
+(async () => {
+  try{
+    if(isTauri){
+      const last = localStorage.getItem("mt-last-file");
+      if(last){
+        const text = await invoke<string>("read_file", { path: last });
+        if(!userEdited){
+          loadDocFile(text);
+          filePath = last;
+          setStatus(`Opened ${last}`);
+        }
+      }
+    }else{
+      const draft = localStorage.getItem("mt-draft");
+      if(draft && !userEdited){
+        loadDocFile(draft);
+        setStatus("Restored draft from browser storage");
+      }
+    }
+  }catch{
+    //last file missing or unreadable, keep the welcome document
+  }
+})();
