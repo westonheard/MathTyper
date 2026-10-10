@@ -117,7 +117,18 @@ function toolbarSelect(options: [string, string][], title: string, onchange: (v:
 }
 
 //---------- popovers ----------
-function popover(anchor: HTMLElement): HTMLDivElement{
+const popovers: [HTMLDivElement, HTMLElement][] = [];
+//one outside-click listener closes whichever popovers are open
+document.addEventListener("mousedown", (e) => {
+  for(const [panel, anchor] of popovers){
+    if(!panel.hidden && !panel.contains(e.target as Node) && !anchor.contains(e.target as Node)){
+      panel.hidden = true;
+    }
+  }
+});
+
+//build runs the first time the popover opens, so a panel nobody opens costs nothing
+function popover(anchor: HTMLElement, build?: (panel: HTMLDivElement) => void): HTMLDivElement{
   const panel = document.createElement("div");
   panel.className = "popover";
   panel.hidden = true;
@@ -129,17 +140,14 @@ function popover(anchor: HTMLElement): HTMLDivElement{
   });
   anchor.addEventListener("click", () => {
     panel.hidden = !panel.hidden;
-    if(!panel.hidden){
-      const r = anchor.getBoundingClientRect();
-      panel.style.top = `${r.bottom + 6}px`;
-      panel.style.left = `${Math.min(r.left, window.innerWidth - panel.offsetWidth - 12)}px`;
-    }
+    if(panel.hidden){return;}
+    build?.(panel);
+    build = undefined;
+    const r = anchor.getBoundingClientRect();
+    panel.style.top = `${r.bottom + 6}px`;
+    panel.style.left = `${Math.min(r.left, window.innerWidth - panel.offsetWidth - 12)}px`;
   });
-  document.addEventListener("mousedown", (e) => {
-    if(!panel.hidden && !panel.contains(e.target as Node) && !anchor.contains(e.target as Node)){
-      panel.hidden = true;
-    }
-  });
+  popovers.push([panel, anchor]);
   return panel;
 }
 
@@ -325,25 +333,23 @@ function symbolGrid(symbols: SymbolEntry[]): HTMLDivElement{
 for(const cat of SYMBOL_CATEGORIES.filter((c2) => c2.button)){
   const b = addButton({ label: cat.button!, title: cat.label, run: () => {} }, "symbol-cat");
   b.addEventListener("click", captureMathTarget);
-  const panel = popover(b);
-  panel.classList.add("symbol-panel");
-  panel.appendChild(symbolGrid(cat.symbols));
+  popover(b, (panel) => panel.appendChild(symbolGrid(cat.symbols))).classList.add("symbol-panel");
 }
 //…an Ω button holding everything else…
 {
   const b = addButton({ label: "Ω", title: "More symbols", run: () => {} }, "symbol-cat");
   b.addEventListener("click", captureMathTarget);
-  const panel = popover(b);
-  panel.classList.add("symbol-panel");
-  const body = document.createElement("div");
-  body.className = "symbol-body";
-  for(const cat of SYMBOL_CATEGORIES.filter((c2) => !c2.button)){
-    const section = document.createElement("div");
-    section.innerHTML = `<h4>${cat.label}</h4>`;
-    section.appendChild(symbolGrid(cat.symbols));
-    body.appendChild(section);
-  }
-  panel.appendChild(body);
+  popover(b, (panel) => {
+    const body = document.createElement("div");
+    body.className = "symbol-body";
+    for(const cat of SYMBOL_CATEGORIES.filter((c2) => !c2.button)){
+      const section = document.createElement("div");
+      section.innerHTML = `<h4>${cat.label}</h4>`;
+      section.appendChild(symbolGrid(cat.symbols));
+      body.appendChild(section);
+    }
+    panel.appendChild(body);
+  }).classList.add("symbol-panel");
 }
 //…and a search across all of it, matching commands and plain-English aliases.
 {
