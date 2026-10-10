@@ -429,7 +429,7 @@ toolbar.appendChild(zoomSel);
 //page setup
 function settingsChanged(){
   applySettings();
-  refresh();
+  refresh(true);
   scheduleAutosave();
 }
 const pageBtn = addButton({ label: "Page", title: "Page setup (font, size, margins)", run: () => {} }, "action");
@@ -496,15 +496,25 @@ try{
   if(localStorage.getItem("mt-theme") === "dark"){document.body.classList.add("dark");}
 }catch{}
 
+const panes = document.querySelector("#panes")!;
 addButton({ label: "⇥", title: "Show/hide LaTeX pane", run: () => {
-  document.querySelector("#panes")!.classList.toggle("pane-hidden");
+  panes.classList.toggle("pane-hidden");
+  refresh(); //catches the pane up on edits made while it was hidden
 } });
 
 //---------- live LaTeX pane ----------
 const pane = document.querySelector("#latex-pane")!;
+let latexStale = true;
 let timer: number | undefined;
-function refresh(){
-  pane.textContent = docToLatex(editor.getJSON() as any, settings);
+function refresh(docChanged = false){
+  if(docChanged){latexStale = true;}
+  //serializing the whole document is the expensive part, so it only runs when the
+  //content changed and the pane is showing. moving the cursor skips it
+  //ponytail: still O(document) per edit, cache per top level block if long documents lag
+  if(latexStale && !panes.classList.contains("pane-hidden")){
+    latexStale = false;
+    pane.textContent = docToLatex(editor.getJSON() as any, settings);
+  }
   for(const [el, b] of btnEls){el.classList.toggle("active", b.active?.() ?? false);}
   if(!tablePanel.hidden){renderTablePanel();} //keep the open panel in sync with keyboard edits
   const ts = editor.getAttributes("textStyle");
@@ -513,7 +523,8 @@ function refresh(){
   const color = ts.color ? cssToHex(ts.color) : null;
   colorBtn.style.borderBottom = color ? `3px solid #${color}` : "";
 }
-editor.on("transaction", () => {
+editor.on("transaction", ({ transaction }) => {
+  if(transaction.docChanged){latexStale = true;}
   clearTimeout(timer);
   timer = window.setTimeout(refresh, 100);
 });
@@ -556,7 +567,7 @@ function loadDocFile(text: string){
   zoomSel.value = String(Math.round(zoom * 100));
   applySettings();
   syncPageControls.forEach((f) => f());
-  refresh();
+  refresh(true);
 }
 
 //undo must not cross document boundaries, rebuild the state so history starts fresh
@@ -652,7 +663,7 @@ async function newDoc(){
   filePath = null;
   applySettings();
   syncPageControls.forEach((f) => f());
-  refresh();
+  refresh(true);
   await autosave(); //desktop: allocates the new file now, browser: fresh draft
   editor.commands.focus();
 }

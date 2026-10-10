@@ -112,21 +112,18 @@ const UNICODE_MAP: Record<string, string> = {
 //Beyond-Latin-1 characters verified to compile under the generated preamble.
 const UNICODE_OK = new Set(["–", "—", "‘", "’", "“", "”", "…", "→"]);
 
+const ESCAPES: Record<string, string> = {
+  "\\": "\\textbackslash{}", "&": "\\&", "%": "\\%", $: "\\$", "#": "\\#", _: "\\_", "{": "\\{", "}": "\\}",
+  "~": "\\textasciitilde{}", "^": "\\textasciicircum{}", "<": "\\textless{}", ">": "\\textgreater{}", "|": "\\textbar{}",
+};
+
+//one pass over the text. exotic Unicode with no mapping aborts pdflatex, so it becomes a
+//visible "?" (the u flag keeps an emoji as one character, so one "?")
+//ponytail: extend UNICODE_MAP as users hit real characters
 export function escapeLatex(text: string): string{
-  return text
-    .replace(/\\/g, "\u0000")
-    .replace(/([&%$#_{}])/g, "\\$1")
-    .replace(/~/g, "\\textasciitilde{}")
-    .replace(/\^/g, "\\textasciicircum{}")
-    .replace(/</g, "\\textless{}")
-    .replace(/>/g, "\\textgreater{}")
-    .replace(/\|/g, "\\textbar{}")
-    .replace(/\u0000/g, "\\textbackslash{}")
-    //last: exotic Unicode with no mapping aborts pdflatex, substitute a visible "?"
-    //ponytail: extend UNICODE_MAP as users hit real characters
-    .replace(/[\u0100-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]/g, (ch) =>
-      UNICODE_MAP[ch] ?? (UNICODE_OK.has(ch) ? ch : "?")
-    );
+  return text.replace(/[\\&%$#_{}~^<>|]|[^\u0000-\u00ff]/gu, (ch) =>
+    ESCAPES[ch] ?? UNICODE_MAP[ch] ?? (UNICODE_OK.has(ch) ? ch : "?")
+  );
 }
 
 const FAMILY_CMD: Record<string, string> = {
