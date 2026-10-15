@@ -90,17 +90,24 @@ body {
   border-left: 1px solid #ddd; white-space: pre-wrap;
 }
 
-/* math fields */
-.math-inline { display: inline-block; vertical-align: middle; }
-.math-block { display: block; text-align: center; margin: 8px 0; }
-math-field {
+/* math: equations are static markup (.ML__latex) until clicked, then a live math-field */
+.math-inline { display: inline-block; vertical-align: middle; cursor: text; }
+.math-block { display: block; text-align: center; margin: 8px 0; cursor: text; }
+math-field, .math-inline > .ML__latex, .math-block > .ML__latex {
   display: inline-block; min-width: 2ch;
   font-size: 1.1em;
   border: 1px solid transparent; border-radius: 4px; padding: 1px 3px;
 }
+/* the field pads its content inside its shadow DOM (4px container + 2px 3px 2px 1px content).
+   the static version gets the same total so the text doesn't shift when one swaps for the other */
+.math-inline > .ML__latex, .math-block > .ML__latex { padding: 7px 10px 7px 8px; }
+/* an equation with nothing in it yet still needs something to click */
+.math-inline:empty, .math-block:empty { min-width: 2ch; min-height: 1.6em; border: 1px dashed #bbb; border-radius: 4px; }
+.math-block:empty { width: 20ch; margin: 8px auto; }
 math-field:focus-within { border-color: #7aa5f8; background: #f6f9ff; outline: none; }
 math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { display: none; }
-.math-block math-field { min-width: 20ch; font-size: 1.25em; }
+.math-block math-field, .math-block > .ML__latex { min-width: 20ch; font-size: 1.25em; }
+
 /* popovers */
 .popover[hidden] { display: none; }
 .popover {

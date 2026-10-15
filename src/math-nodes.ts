@@ -1,7 +1,8 @@
-//TipTap atom nodes that embed a MathLive <math-field> for Desmos-style math typing.
+//TipTap atom nodes for math. An equation is drawn as static markup and only the one being
+//edited gets a live MathLive <math-field>, since a live field per equation got heavy on long documents.
 import { Node, nodeInputRule } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
-import { MathfieldElement } from "mathlive";
+import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 
 //focus a math field only when the user just asked for one (input rule, shortcut,
 //palette), never on document load or undo
@@ -9,6 +10,10 @@ let focusRequested = false;
 export function requestMathFocus(){
   focusRequested = true;
 }
+
+//turns the equation that currently holds the live field back into static markup,
+//so there is never more than one field alive
+let closeLive: (() => void) | null = null;
 
 declare module "@tiptap/core"{
   interface Commands<ReturnType>{
@@ -49,22 +54,30 @@ function makeMathNode(name: "mathInline" | "mathBlock"){
       ];
     },
 
+    //the cursor is back in the document text, so the field is not needed anymore
+    onFocus(){
+      closeLive?.();
+    },
+
     addNodeView(){
       return ({ node, editor, getPos }) => {
-        const dom = document.createElement(inline ? "span" : "div");
+        const dom: HTMLElement = document.createElement(inline ? "span" : "div");
         dom.className = inline ? "math-inline" : "math-block";
-        const mf = new MathfieldElement();
-        mf.value = node.attrs.latex;
-        mf.setAttribute("math-virtual-keyboard-policy", "manual");
-        dom.appendChild(mf);
-        if(focusRequested){
-          focusRequested = false;
-          setTimeout(() => mf.focus(), 0);
-        }
+        let mf: MathfieldElement | null = null;
 
         const pos = () => {
           const p = getPos();
           return typeof p === "number" ? p : null;
+        };
+
+        const showStatic = () => {
+          mf = null;
+          try{
+            //an empty equation stays an empty element, the stylesheet draws a box for it
+            dom.innerHTML = node.attrs.latex.trim() ? convertLatexToMarkup(node.attrs.latex) : "";
+          }catch{
+            dom.textContent = node.attrs.latex;
+          }
         };
 
         const exit = (side: 1 | -1) => {
@@ -77,51 +90,98 @@ function makeMathNode(name: "mathInline" | "mathBlock"){
           view.focus();
         };
 
-        mf.addEventListener("input", () => {
-          const p = pos();
-          if(p === null || mf.value === node.attrs.latex){return;}
-          const { state, view } = editor;
-          view.dispatch(
-            state.tr.setNodeMarkup(p, undefined, { latex: mf.value }).setMeta("addToHistory", true)
+        //swap the static markup for a live field. x/y is where the user clicked, so the
+        //caret lands there and not at the end
+        const open = (x?: number, y?: number) => {
+          if(mf){
+            mf.focus();
+            return;
+          }
+          closeLive?.();
+          const field = new MathfieldElement();
+          mf = field;
+          field.value = node.attrs.latex;
+          field.setAttribute("math-virtual-keyboard-policy", "manual");
+
+          field.addEventListener("input", () => {
+            const p = pos();
+            if(p === null || field.value === node.attrs.latex){return;}
+            const { state, view } = editor;
+            view.dispatch(
+              state.tr.setNodeMarkup(p, undefined, { latex: field.value }).setMeta("addToHistory", true)
+            );
+          });
+
+          field.addEventListener("move-out", ((ev: CustomEvent) => {
+            const dir = ev.detail?.direction;
+            exit(dir === "backward" || dir === "upward" ? -1 : 1);
+          }) as EventListener);
+
+          field.addEventListener(
+            "keydown",
+            (ev) => {
+              if(ev.key === "Escape" || (ev.key === "Enter" && !ev.shiftKey)){
+                ev.preventDefault();
+                ev.stopPropagation();
+                exit(1);
+              }else if(ev.key === "Backspace" && field.value === ""){
+                ev.preventDefault();
+                ev.stopPropagation();
+                const p = pos();
+                if(p === null){return;}
+                const { state, view } = editor;
+                view.dispatch(state.tr.delete(p, p + node.nodeSize));
+                view.focus();
+              }
+            },
+            { capture: true }
           );
+
+          dom.replaceChildren(field);
+          closeLive = () => {
+            closeLive = null;
+            showStatic();
+          };
+          setTimeout(() => {
+            field.focus();
+            if(x === undefined || y === undefined){return;}
+            const offset = field.getOffsetFromPoint(x, y);
+            if(offset >= 0){field.position = offset;}
+          }, 0);
+        };
+
+        dom.addEventListener("mousedown", (ev) => {
+          if(mf){return;}
+          ev.preventDefault();
+          open(ev.clientX, ev.clientY);
         });
 
-        mf.addEventListener("move-out", ((ev: CustomEvent) => {
-          const dir = ev.detail?.direction;
-          exit(dir === "backward" || dir === "upward" ? -1 : 1);
-        }) as EventListener);
-
-        mf.addEventListener(
-          "keydown",
-          (ev) => {
-            if(ev.key === "Escape" || (ev.key === "Enter" && !ev.shiftKey)){
-              ev.preventDefault();
-              ev.stopPropagation();
-              exit(1);
-            }else if(ev.key === "Backspace" && mf.value === ""){
-              ev.preventDefault();
-              ev.stopPropagation();
-              const p = pos();
-              if(p === null){return;}
-              const { state, view } = editor;
-              view.dispatch(state.tr.delete(p, p + node.nodeSize));
-              view.focus();
-            }
-          },
-          { capture: true }
-        );
+        if(focusRequested){
+          focusRequested = false;
+          open();
+        }else{
+          showStatic();
+        }
 
         return {
           dom,
           update: (updated) => {
             if(updated.type.name !== name){return false;}
+            const changed = updated.attrs.latex !== node.attrs.latex;
             node = updated;
-            if(mf.value !== updated.attrs.latex){mf.value = updated.attrs.latex;}
+            if(mf){
+              if(mf.value !== node.attrs.latex){mf.value = node.attrs.latex;}
+            }else if(changed){
+              showStatic();
+            }
             return true;
           },
-          selectNode: () => mf.focus(),
+          selectNode: () => open(),
           stopEvent: () => true,
           ignoreMutation: () => true,
+          destroy: () => {
+            if(mf){closeLive = null;}
+          },
         };
       };
     },
@@ -130,7 +190,7 @@ function makeMathNode(name: "mathInline" | "mathBlock"){
       const insert =
         (latex = "") =>
         ({ commands, dispatch, editor }: any) => {
-          if(editor.isActive("codeBlock")) return false; //would split the code block
+          if(editor.isActive("codeBlock")){return false;} //would split the code block
           if(dispatch && !latex){requestMathFocus();}
           return commands.insertContent({ type: name, attrs: { latex } });
         };
