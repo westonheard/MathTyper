@@ -13,7 +13,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { EditorState } from "@tiptap/pm/state";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { MathBlock, MathInline, requestMathFocus } from "./math-nodes";
-import { cssToHex, DEFAULT_SETTINGS, docToLatex, type DocSettings } from "./latex";
+import { cssToHex, DEFAULT_SETTINGS, docToLatex, sanitizeSettings, type DocSettings } from "./latex";
 import { SYMBOL_CATEGORIES, type SymbolEntry } from "./symbols";
 
 MathfieldElement.soundsDirectory = null;
@@ -568,7 +568,7 @@ function loadDocFile(text: string){
   //immediately rewritten with whatever the parse produced
   editor.commands.setContent(data.doc, { emitUpdate: false, errorOnInvalidContent: true });
   clearHistory();
-  Object.assign(settings, DEFAULT_SETTINGS, data.settings ?? {});
+  Object.assign(settings, sanitizeSettings(data.settings));
   zoom = typeof data.zoom === "number" && data.zoom > 0 ? data.zoom : 1;
   zoomSel.value = String(Math.round(zoom * 100));
   applySettings();

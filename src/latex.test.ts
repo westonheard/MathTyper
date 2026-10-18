@@ -1,6 +1,6 @@
 //Run with: node src/latex.test.ts
 import assert from "node:assert/strict";
-import { cssToHex, docToLatex, escapeLatex, fontSizePt } from "./latex.ts";
+import { cssToHex, DEFAULT_SETTINGS, docToLatex, escapeLatex, fontSizePt, sanitizeSettings } from "./latex.ts";
 
 assert.equal(escapeLatex("5 − 3 and π ≤ Ω, plus 😀 and “quotes”"), '5 $-$ 3 and $\\pi$ $\\le$ $\\Omega$, plus ? and “quotes”');
 assert.equal(cssToHex("rgb(300, 0, 0)"), null);
@@ -16,6 +16,12 @@ assert.equal(fontSizePt("120%"), 0);
 assert.equal(escapeLatex("50% of $10 & a_b #1 {x}"), "50\\% of \\$10 \\& a\\_b \\#1 \\{x\\}");
 assert.equal(escapeLatex("a\\b~c^d"), "a\\textbackslash{}b\\textasciitilde{}c\\textasciicircum{}d");
 assert.equal(escapeLatex("a<b>c|d"), "a\\textless{}b\\textgreater{}c\\textbar{}d");
+
+//settings from a file: known values pass, anything else (wrong type, LaTeX smuggled into a
+//field, a prototype key) falls back to the default
+assert.deepEqual(sanitizeSettings({ fontSize: 12, font: "times", paper: "a4", marginIn: 0.5 }), { fontSize: 12, font: "times", paper: "a4", marginIn: 0.5 });
+assert.deepEqual(sanitizeSettings({ fontSize: "12", font: "toString", paper: "a3", marginIn: "1in]{geometry}\\input{x}" }), DEFAULT_SETTINGS);
+assert.deepEqual(sanitizeSettings(null), DEFAULT_SETTINGS);
 
 const doc = {
   type: "doc",

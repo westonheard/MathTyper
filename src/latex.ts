@@ -22,6 +22,18 @@ export const DEFAULT_SETTINGS: DocSettings = {
   marginIn: 1,
 };
 
+//settings come straight out of a file someone else may have made and they end up in the
+//preamble, so anything that isn't a known value falls back to the default
+export function sanitizeSettings(raw: any): DocSettings{
+  const s = { ...DEFAULT_SETTINGS };
+  if(!raw || typeof raw !== "object"){return s;}
+  if([10, 11, 12].includes(raw.fontSize)){s.fontSize = raw.fontSize;}
+  if(Object.keys(FONT_PACKAGES).includes(raw.font)){s.font = raw.font;}
+  if(raw.paper === "letter" || raw.paper === "a4"){s.paper = raw.paper;}
+  if(typeof raw.marginIn === "number" && raw.marginIn >= 0.25 && raw.marginIn <= 2.5){s.marginIn = raw.marginIn;}
+  return s;
+}
+
 const FONT_PACKAGES: Record<DocSettings["font"], string> = {
   "latin-modern": "\\usepackage{lmodern}",
   times: "\\usepackage{mathptmx}",
