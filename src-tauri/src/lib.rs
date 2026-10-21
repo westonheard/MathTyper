@@ -1,12 +1,15 @@
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+//the file commands are async so they run off the main thread, a slow disk can't freeze the window
+
 #[tauri::command]
-fn write_file(path: String, contents: String) -> Result<(), String>{
+async fn write_file(path: String, contents: String) -> Result<(), String>{
     let p = Path::new(&path);
     if let Some(parent) = p.parent(){
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -14,12 +17,15 @@ fn write_file(path: String, contents: String) -> Result<(), String>{
     //temp + rename so a crash mid save can never truncate the only copy
     let mut tmp = p.as_os_str().to_owned();
     tmp.push(".tmp");
-    fs::write(&tmp, contents).map_err(|e| e.to_string())?;
+    let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+    file.write_all(contents.as_bytes()).map_err(|e| e.to_string())?;
+    //has to be on disk before the rename, or a power cut can leave an empty file under the real name
+    file.sync_all().map_err(|e| e.to_string())?;
     fs::rename(&tmp, p).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn read_file(path: String) -> Result<String, String>{
+async fn read_file(path: String) -> Result<String, String>{
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
