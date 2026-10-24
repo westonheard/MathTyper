@@ -598,63 +598,63 @@ async function allocateAutosavePath(): Promise<string>{
 }
 
 //---------- autosave ----------
-let autosaveTimer: number | undefined;
-let autosavePending = false; //an edit is waiting on the debounce
-let autosaving = false;
-let userEdited = false;
+let saveTimer: number | undefined;
+let dirty = false; //edits that are not on disk yet
+let saving: Promise<void> = Promise.resolve(); //writes queue on this so two never overlap
+
 function scheduleAutosave(){
-  userEdited = true;
-  autosavePending = true;
-  clearTimeout(autosaveTimer);
-  autosaveTimer = window.setTimeout(autosave, 1500);
+  dirty = true;
+  clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(autosave, 1500);
 }
-async function autosave(){
-  if(autosaving){
-    scheduleAutosave();
-    return;
-  }
-  autosaving = true;
-  autosavePending = false;
-  try{
-    const contents = docFile();
-    if(isTauri){
+
+function autosave(): Promise<void>{
+  saving = saving.then(async () => {
+    if(!dirty){return;}
+    dirty = false;
+    try{
+      const contents = docFile();
+      if(!isTauri){
+        localStorage.setItem("mt-draft", contents);
+        setStatusSoft(`Draft autosaved ${new Date().toLocaleTimeString()} (browser storage)`);
+        return;
+      }
       if(!filePath){filePath = await allocateAutosavePath();}
-      const target = filePath;
-      await invoke("write_file", { path: target, contents });
+      await invoke("write_file", { path: filePath, contents });
       rememberLastFile();
-      setStatusSoft(`Autosaved ${new Date().toLocaleTimeString()} — ${target}`);
-    }else{
-      localStorage.setItem("mt-draft", contents);
-      setStatusSoft(`Draft autosaved ${new Date().toLocaleTimeString()} (browser storage)`);
+      setStatusSoft(`Autosaved ${new Date().toLocaleTimeString()} — ${filePath}`);
+    }catch(e){
+      dirty = true; //still not on disk, the next edit or the close handler tries again
+      setStatus(`Autosave failed: ${e}`, true);
     }
-  }catch(e){
-    setStatus(`Autosave failed: ${e}`, true);
-  }finally{
-    autosaving = false;
-  }
+  });
+  return saving;
 }
-//write the outgoing document's pending edits before switching documents or quitting
-async function flushAutosave(){
-  clearTimeout(autosaveTimer);
-  if(autosavePending){await autosave();}
+
+//write the pending edits now. also waits for a write that is already running
+function flushAutosave(): Promise<void>{
+  clearTimeout(saveTimer);
+  return autosave();
 }
 editor.on("update", scheduleAutosave);
 
-//flush the tail of the last edit on quit/close
 if(isTauri){
+  let warned = false;
   getCurrentWindow().onCloseRequested(async (e) => {
-    if(autosavePending || autosaving){
-      e.preventDefault();
-      await flushAutosave();
-      await invoke("quit_app");
+    e.preventDefault();
+    await flushAutosave();
+    if(dirty && !warned){
+      //the last write failed, don't throw the edits away without saying so
+      warned = true;
+      setStatus("Could not save the latest changes. Close again to quit without them.", true);
+      return;
     }
+    await invoke("quit_app");
   });
 }else{
   window.addEventListener("beforeunload", () => {
-    if(autosavePending){
-      clearTimeout(autosaveTimer);
-      try{ localStorage.setItem("mt-draft", docFile()); }catch{}
-    }
+    if(!dirty){return;}
+    try{ localStorage.setItem("mt-draft", docFile()); }catch{}
   });
 }
 
@@ -670,6 +670,7 @@ async function newDoc(){
   applySettings();
   syncPageControls.forEach((f) => f());
   refresh(true);
+  dirty = true;
   await autosave(); //desktop: allocates the new file now, browser: fresh draft
   editor.commands.focus();
 }
@@ -785,17 +786,15 @@ if(import.meta.env.DEV){(window as any).mt = { docFile, loadDocFile, newDoc, aut
   try{
     if(isTauri){
       const last = localStorage.getItem("mt-last-file");
-      if(last){
-        const text = await invoke<string>("read_file", { path: last });
-        if(!userEdited){
-          loadDocFile(text);
-          filePath = last;
-          setStatus(`Opened ${last}`);
-        }
-      }
+      if(!last){return;}
+      const text = await invoke<string>("read_file", { path: last });
+      if(dirty || filePath){return;} //the user already started typing, leave their document alone
+      loadDocFile(text);
+      filePath = last;
+      setStatus(`Opened ${last}`);
     }else{
       const draft = localStorage.getItem("mt-draft");
-      if(draft && !userEdited){
+      if(draft && !dirty){
         loadDocFile(draft);
         setStatus("Restored draft from browser storage");
       }
