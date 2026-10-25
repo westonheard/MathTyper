@@ -490,6 +490,28 @@ const syncPageControls: (() => void)[] = [];
 
 addButton({ label: "New", title: "New document (⌘N)", run: () => newDoc() }, "action");
 addButton({ label: "Open", title: "Open document (⌘O)", run: openDoc }, "action");
+if(isTauri){
+  const recentBtn = addButton({ label: "▾", title: "Recent documents", run: () => {} }, "action");
+  const recentPanel = popover(recentBtn);
+  recentPanel.classList.add("menu-panel");
+  //rebuilt on every open, the list changes as documents are opened and renamed
+  recentBtn.addEventListener("click", () => {
+    if(recentPanel.hidden){return;}
+    recentPanel.innerHTML = "";
+    const list = recentFiles();
+    if(!list.length){recentPanel.innerHTML = '<p class="hint">No recent documents.</p>';}
+    for(const p of list){
+      const b = document.createElement("button");
+      b.textContent = baseName(p).replace(/\.mtd$/i, "");
+      b.title = p;
+      b.addEventListener("click", () => {
+        recentPanel.hidden = true;
+        openPath(p);
+      });
+      recentPanel.appendChild(b);
+    }
+  });
+}
 addButton({ label: "Save", title: "Save document (⌘S)", run: () => saveDoc() }, "action");
 addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
 addButton({ label: "Compile PDF", title: "Compile with pdflatex and open", run: compilePdf }, "action");
@@ -581,10 +603,25 @@ function clearHistory(){
   editor.view.updateState(EditorState.create({ doc: editor.state.doc, plugins: editor.state.plugins }));
 }
 
-function rememberLastFile(){
+const baseName = (p: string) => p.split(/[\\/]/).pop()!;
+
+//---------- recent documents ----------
+function recentFiles(): string[]{
   try{
-    if(filePath){localStorage.setItem("mt-last-file", filePath);}
-  }catch{}
+    const list = JSON.parse(localStorage.getItem("mt-recent") ?? "null");
+    if(Array.isArray(list)){return list.filter((p) => typeof p === "string");}
+    const last = localStorage.getItem("mt-last-file"); //written by versions before the recent list
+    return last ? [last] : [];
+  }catch{
+    return [];
+  }
+}
+function setRecent(list: string[]){
+  try{ localStorage.setItem("mt-recent", JSON.stringify(list.slice(0, 8))); }catch{}
+}
+//newest first. replaces is the old path of a file that was just renamed
+function remember(path: string, replaces: string | null = null){
+  setRecent([path, ...recentFiles().filter((p) => p !== path && p !== replaces)]);
 }
 
 //every document lives in a real file from its first edit, no save dialog needed
@@ -621,7 +658,7 @@ function autosave(): Promise<void>{
       }
       if(!filePath){filePath = await allocateAutosavePath();}
       await invoke("write_file", { path: filePath, contents });
-      rememberLastFile();
+      remember(filePath);
       setStatusSoft(`Autosaved ${new Date().toLocaleTimeString()} — ${filePath}`);
     }catch(e){
       dirty = true; //still not on disk, the next edit or the close handler tries again
@@ -675,47 +712,57 @@ async function newDoc(){
   editor.commands.focus();
 }
 
-async function openDoc(){
+async function openPath(p: string){
+  if(p === filePath){return;}
   try{
+    const text = await invoke<string>("read_file", { path: p });
     await flushAutosave(); //the outgoing doc keeps its last edits
-    if(isTauri){
-      const p = await openDialog({ filters: [{ name: "MathTyper document", extensions: ["mtd"] }], multiple: false });
-      if(typeof p !== "string"){return;}
-      loadDocFile(await invoke<string>("read_file", { path: p }));
-      filePath = p;
-      rememberLastFile();
-      setStatus(`Opened ${p}`);
-    }else{
-      const input = Object.assign(document.createElement("input"), { type: "file", accept: ".mtd,application/json" });
-      input.addEventListener("change", async () => {
-        try{
-          if(input.files?.[0]){loadDocFile(await input.files[0].text());}
-        }catch(e){
-          setStatus(`Open failed: ${e}`, true);
-        }
-      });
-      input.click();
-    }
+    loadDocFile(text);
+    filePath = p;
+    remember(p);
+    setStatus(`Opened ${p}`);
   }catch(e){
+    setRecent(recentFiles().filter((r) => r !== p)); //moved, deleted or not a document
     setStatus(`Open failed: ${e}`, true);
   }
 }
 
+async function openDoc(){
+  if(isTauri){
+    const p = await openDialog({ filters: [{ name: "MathTyper document", extensions: ["mtd"] }], multiple: false });
+    if(typeof p === "string"){await openPath(p);}
+    return;
+  }
+  const input = Object.assign(document.createElement("input"), { type: "file", accept: ".mtd,application/json" });
+  input.addEventListener("change", async () => {
+    try{
+      if(input.files?.[0]){loadDocFile(await input.files[0].text());}
+    }catch(e){
+      setStatus(`Open failed: ${e}`, true);
+    }
+  });
+  input.click();
+}
+
 async function saveDoc(saveAs = false){
   try{
-    if(isTauri){
-      let p = filePath;
-      if(!p || saveAs){
-        p = await save({ defaultPath: "document.mtd", filters: [{ name: "MathTyper document", extensions: ["mtd"] }] });
-        if(!p){return;}
-      }
-      await invoke("write_file", { path: p, contents: docFile() });
-      filePath = p; //only committed once the write succeeded
-      rememberLastFile();
-      setStatus(`Saved ${p}`);
-    }else{
+    if(!isTauri){
       download("document.mtd", docFile());
+      return;
     }
+    if(filePath && !saveAs){
+      dirty = true;
+      await flushAutosave(); //same queue as autosave, so the two never write the file at once
+      if(!dirty){setStatus(`Saved ${filePath}`);}
+      return;
+    }
+    const p = await save({ defaultPath: "document.mtd", filters: [{ name: "MathTyper document", extensions: ["mtd"] }] });
+    if(!p){return;}
+    await flushAutosave();
+    await invoke("write_file", { path: p, contents: docFile() });
+    filePath = p; //only committed once the write succeeded
+    remember(p);
+    setStatus(`Saved ${p}`);
   }catch(e){
     setStatus(`Save failed: ${e}`, true);
   }
@@ -785,7 +832,7 @@ if(import.meta.env.DEV){(window as any).mt = { docFile, loadDocFile, newDoc, aut
 (async () => {
   try{
     if(isTauri){
-      const last = localStorage.getItem("mt-last-file");
+      const last = recentFiles()[0];
       if(!last){return;}
       const text = await invoke<string>("read_file", { path: last });
       if(dirty || filePath){return;} //the user already started typing, leave their document alone
