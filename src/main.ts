@@ -8,7 +8,7 @@ import { Highlight } from "@tiptap/extension-highlight";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
-import { documentDir } from "@tauri-apps/api/path";
+import { documentDir, join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { EditorState } from "@tiptap/pm/state";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
@@ -605,6 +605,26 @@ function clearHistory(){
 
 const baseName = (p: string) => p.split(/[\\/]/).pop()!;
 
+//name for a document the user has not named: its first heading, or else its first line.
+//strips what Windows and macOS refuse in a file name
+function titleName(): string{
+  const doc = editor.state.doc;
+  let line = "";
+  for(let i = 0; i < doc.childCount; i++){
+    const text = doc.child(i).textContent.trim();
+    if(!text){continue;}
+    if(doc.child(i).type.name === "heading"){
+      line = text;
+      break;
+    }
+    if(!line){line = text;}
+  }
+  return line.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").replace(/\s+/g, " ").slice(0, 60).replace(/[. ]+$/, "").trim() || "Untitled";
+}
+
+//exports land next to the document, under the same name
+const exportStem = () => (filePath ? filePath.replace(/\.mtd$/i, "") : titleName());
+
 //---------- recent documents ----------
 function recentFiles(): string[]{
   try{
@@ -624,20 +644,12 @@ function remember(path: string, replaces: string | null = null){
   setRecent([path, ...recentFiles().filter((p) => p !== path && p !== replaces)]);
 }
 
-//every document lives in a real file from its first edit, no save dialog needed
-function two(n: number){
-  return String(n).padStart(2, "0");
-}
-async function allocateAutosavePath(): Promise<string>{
-  const d = new Date();
-  const name = `Untitled ${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}.${two(d.getMinutes())}.${two(d.getSeconds())}.mtd`;
-  return `${await documentDir()}/MathTyper/${name}`;
-}
-
 //---------- autosave ----------
 let saveTimer: number | undefined;
 let dirty = false; //edits that are not on disk yet
 let saving: Promise<void> = Promise.resolve(); //writes queue on this so two never overlap
+//while the app picked the file name it follows the document title. null once the user picked one
+let autoName: string | null = null;
 
 function scheduleAutosave(){
   dirty = true;
@@ -656,9 +668,19 @@ function autosave(): Promise<void>{
         setStatusSoft(`Draft autosaved ${new Date().toLocaleTimeString()} (browser storage)`);
         return;
       }
-      if(!filePath){filePath = await allocateAutosavePath();}
+      if(!filePath && editor.isEmpty){return;} //no file until there is something to put in it
+      if(!filePath || autoName !== null){
+        const want = titleName();
+        if(want !== autoName){
+          const dir = await join(await documentDir(), "MathTyper");
+          const next = await invoke<string>("unique_path", { dir, base: want, ext: ".mtd" });
+          if(filePath){await invoke("rename_file", { from: filePath, to: next });}
+          remember(next, filePath);
+          filePath = next;
+          autoName = want;
+        }
+      }
       await invoke("write_file", { path: filePath, contents });
-      remember(filePath);
       setStatusSoft(`Autosaved ${new Date().toLocaleTimeString()} — ${filePath}`);
     }catch(e){
       dirty = true; //still not on disk, the next edit or the close handler tries again
@@ -704,11 +726,14 @@ async function newDoc(){
   zoom = 1;
   zoomSel.value = "100";
   filePath = null;
+  autoName = null;
   applySettings();
   syncPageControls.forEach((f) => f());
   refresh(true);
-  dirty = true;
-  await autosave(); //desktop: allocates the new file now, browser: fresh draft
+  if(!isTauri){
+    dirty = true; //the browser draft has to be replaced now, the desktop file waits for content
+    await autosave();
+  }
   editor.commands.focus();
 }
 
@@ -719,6 +744,7 @@ async function openPath(p: string){
     await flushAutosave(); //the outgoing doc keeps its last edits
     loadDocFile(text);
     filePath = p;
+    autoName = null;
     remember(p);
     setStatus(`Opened ${p}`);
   }catch(e){
@@ -747,7 +773,7 @@ async function openDoc(){
 async function saveDoc(saveAs = false){
   try{
     if(!isTauri){
-      download("document.mtd", docFile());
+      download(`${titleName()}.mtd`, docFile());
       return;
     }
     if(filePath && !saveAs){
@@ -756,11 +782,12 @@ async function saveDoc(saveAs = false){
       if(!dirty){setStatus(`Saved ${filePath}`);}
       return;
     }
-    const p = await save({ defaultPath: "document.mtd", filters: [{ name: "MathTyper document", extensions: ["mtd"] }] });
+    const p = await save({ defaultPath: `${exportStem()}.mtd`, filters: [{ name: "MathTyper document", extensions: ["mtd"] }] });
     if(!p){return;}
     await flushAutosave();
     await invoke("write_file", { path: p, contents: docFile() });
     filePath = p; //only committed once the write succeeded
+    autoName = null;
     remember(p);
     setStatus(`Saved ${p}`);
   }catch(e){
@@ -798,10 +825,10 @@ async function exportTex(){
   try{
     const latex = docToLatex(editor.getJSON() as any, settings);
     if(!isTauri){
-      download("document.tex", latex);
+      download(`${titleName()}.tex`, latex);
       return;
     }
-    const path = await save({ defaultPath: "document.tex", filters: [{ name: "LaTeX", extensions: ["tex"] }] });
+    const path = await save({ defaultPath: `${exportStem()}.tex`, filters: [{ name: "LaTeX", extensions: ["tex"] }] });
     if(!path){return;}
     await invoke("write_file", { path, contents: latex });
     setStatus(`Saved ${path}`);
