@@ -514,7 +514,7 @@ if(isTauri){
 }
 addButton({ label: "Save", title: "Save document (⌘S)", run: () => saveDoc() }, "action");
 addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
-addButton({ label: "Compile PDF", title: "Compile with pdflatex and open", run: compilePdf }, "action");
+addButton({ label: "Export PDF", title: "Compile with pdflatex and save the PDF", run: exportPdf }, "action");
 
 addButton({ label: "◐", title: "Dark mode", run: () => {
   const on = document.body.classList.toggle("dark");
@@ -837,17 +837,19 @@ async function exportTex(){
   }
 }
 
-async function compilePdf(){
+async function exportPdf(){
   if(!isTauri){
-    setStatus("Compile needs the desktop app, run: npm run tauri dev", true);
+    setStatus("PDF export needs the desktop app, pdflatex can't run in a browser.", true);
     return;
   }
-  setStatus("Compiling…");
   try{
-    const pdf = await invoke<string>("compile_pdf", { latex: docToLatex(editor.getJSON() as any, settings) });
-    setStatus(`Compiled → ${pdf}`);
+    const path = await save({ defaultPath: `${exportStem()}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+    if(!path){return;}
+    setStatus("Compiling…");
+    await invoke("export_pdf", { latex: docToLatex(editor.getJSON() as any, settings), path });
+    setStatus(`Saved ${path}`);
   }catch(e){
-    setStatus(`pdflatex failed:\n${e}`, true);
+    setStatus(`PDF export failed:\n${e}`, true);
   }
 }
 

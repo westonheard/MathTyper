@@ -71,20 +71,11 @@ fn pdflatex() -> PathBuf{
     PathBuf::from("pdflatex")
 }
 
-#[tauri::command]
-async fn compile_pdf(latex: String) -> Result<String, String>{
-    //own folder per run so two compiles never clobber each other
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("mathtyper-{stamp}"));
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+fn compile(dir: &Path, latex: &str) -> Result<PathBuf, String>{
     fs::write(dir.join("main.tex"), latex).map_err(|e| e.to_string())?;
-
     let out = Command::new(pdflatex())
         .args(["-interaction=nonstopmode", "-halt-on-error", "main.tex"])
-        .current_dir(&dir)
+        .current_dir(dir)
         .output()
         .map_err(|e| format!("could not run pdflatex ({e}), is MacTeX installed?"))?;
 
@@ -94,10 +85,28 @@ async fn compile_pdf(latex: String) -> Result<String, String>{
         let lines: Vec<&str> = log.lines().collect();
         return Err(lines[lines.len().saturating_sub(30)..].join("\n"));
     }
+    Ok(dir.join("main.pdf"))
+}
 
-    let pdf = dir.join("main.pdf");
-    Command::new("open").arg(&pdf).spawn().map_err(|e| e.to_string())?;
-    Ok(pdf.display().to_string())
+#[tauri::command]
+async fn export_pdf(latex: String, path: String) -> Result<(), String>{
+    //own folder per run so two exports never clobber each other
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("mathtyper-{stamp}"));
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let result = compile(&dir, &latex)
+        .and_then(|pdf| fs::copy(pdf, &path).map(|_| ()).map_err(|e| e.to_string()));
+    //only the PDF is kept, the .aux and .log files used to pile up in the temp folder
+    let _ = fs::remove_dir_all(&dir);
+    result?;
+
+    //the PDF is saved either way, not having a viewer is not an export failure
+    let _ = Command::new("open").arg(&path).spawn();
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -105,7 +114,7 @@ pub fn run(){
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![write_file, read_file, unique_path, rename_file, compile_pdf, quit_app])
+        .invoke_handler(tauri::generate_handler![write_file, read_file, unique_path, rename_file, quit_app, export_pdf])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -144,4 +153,18 @@ mod tests{
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[test]
+    fn compiles_a_pdf(){
+        //needs a TeX install, so it only really runs on a machine that has one
+        if Command::new(pdflatex()).arg("-version").output().is_err(){
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("mathtyper-test-pdf-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let pdf = compile(&dir, "\\documentclass{article}\\begin{document}$x^2$\\end{document}").unwrap();
+        assert!(pdf.exists());
+        //a broken document comes back as the end of the log, not as a PDF
+        assert!(compile(&dir, "\\documentclass{article}\\begin{document}\\nope\\end{document}").is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }
