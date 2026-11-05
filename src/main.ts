@@ -8,6 +8,7 @@ import { Highlight } from "@tiptap/extension-highlight";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { MathfieldElement, convertLatexToMarkup } from "mathlive";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { EditorState } from "@tiptap/pm/state";
@@ -770,6 +771,13 @@ async function openDoc(){
   input.click();
 }
 
+//a document handed over by the OS: double-clicked, or dropped on the app icon
+async function openPending(): Promise<boolean>{
+  const p = await invoke<string | null>("take_opened_file");
+  if(p){await openPath(p);}
+  return !!p;
+}
+
 async function saveDoc(saveAs = false){
   try{
     if(!isTauri){
@@ -857,10 +865,13 @@ applySettings();
 refresh();
 if(import.meta.env.DEV){(window as any).mt = { docFile, loadDocFile, newDoc, autosave };}
 
-//reopen the last document (desktop) or restore the browser draft
+//startup: a document the OS asked for wins, then the last one that was open (desktop)
+//or the browser draft
 (async () => {
   try{
     if(isTauri){
+      await listen("open-file", openPending);
+      if(await openPending()){return;}
       const last = recentFiles()[0];
       if(!last){return;}
       const text = await invoke<string>("read_file", { path: last });

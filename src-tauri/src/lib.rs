@@ -3,8 +3,17 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::Command,
+    sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+//a document the OS asked the app to open (double-click, "Open with"), kept until the window asks for it
+struct OpenedFile(Mutex<Option<String>>);
+
+#[tauri::command]
+fn take_opened_file(state: tauri::State<OpenedFile>) -> Option<String>{
+    state.0.lock().unwrap().take()
+}
 
 //the file commands are async so they run off the main thread, a slow disk can't freeze the window
 
@@ -111,12 +120,39 @@ async fn export_pdf(latex: String, path: String) -> Result<(), String>{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(){
+    //Windows and Linux pass a double-clicked document as the first argument
+    let from_args = std::env::args().nth(1).filter(|a| !a.starts_with('-'));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![write_file, read_file, unique_path, rename_file, quit_app, export_pdf])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .manage(OpenedFile(Mutex::new(from_args)))
+        .invoke_handler(tauri::generate_handler![
+            take_opened_file,
+            write_file,
+            read_file,
+            unique_path,
+            rename_file,
+            quit_app,
+            export_pdf
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            //macOS sends it as an event instead, also while the app is already running
+            //ponytail: on Windows and Linux a second double-click starts a second copy of the app,
+            //tauri-plugin-single-instance if one window should take them all
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = event{
+                use tauri::{Emitter, Manager};
+                if let Some(path) = urls.iter().find_map(|u| u.to_file_path().ok()){
+                    *app.state::<OpenedFile>().0.lock().unwrap() = Some(path.to_string_lossy().into_owned());
+                    let _ = app.emit("open-file", ());
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
 
 //cargo test, runs the file commands against a real temp folder
