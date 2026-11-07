@@ -6,6 +6,7 @@ use std::{
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tauri_plugin_opener::OpenerExt;
 
 //a document the OS asked the app to open (double-click, "Open with"), kept until the window asks for it
 struct OpenedFile(Mutex<Option<String>>);
@@ -65,28 +66,32 @@ fn quit_app(app: tauri::AppHandle){
     app.exit(0);
 }
 
-fn pdflatex() -> PathBuf{
-    //apps started from Finder don't get the shell PATH, so check the usual install locations
-    for p in [
+fn pdflatex() -> Command{
+    //apps started from Finder don't get the shell PATH, so look where TeX installs itself on macOS first.
+    //on Windows and Linux the installers put pdflatex on the PATH, which the fallback covers
+    let known = [
         "/Library/TeX/texbin/pdflatex", //MacTeX
         "/opt/homebrew/bin/pdflatex",   //Homebrew (Apple Silicon)
         "/usr/local/bin/pdflatex",      //Homebrew (Intel) or installed by hand
-    ]{
-        let path = PathBuf::from(p);
-        if path.exists(){
-            return path;
-        }
+    ];
+    let bin = known.into_iter().find(|p| Path::new(p).exists()).unwrap_or("pdflatex");
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(bin);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); //CREATE_NO_WINDOW, otherwise a console flashes up on every export
     }
-    PathBuf::from("pdflatex")
+    cmd
 }
 
 fn compile(dir: &Path, latex: &str) -> Result<PathBuf, String>{
     fs::write(dir.join("main.tex"), latex).map_err(|e| e.to_string())?;
-    let out = Command::new(pdflatex())
+    let out = pdflatex()
         .args(["-interaction=nonstopmode", "-halt-on-error", "main.tex"])
         .current_dir(dir)
         .output()
-        .map_err(|e| format!("could not run pdflatex ({e}), is MacTeX installed?"))?;
+        .map_err(|e| format!("could not run pdflatex ({e}). Is a TeX distribution installed? (MacTeX, TeX Live or MiKTeX)"))?;
 
     if !out.status.success(){
         //the reason is at the end of the log
@@ -98,7 +103,7 @@ fn compile(dir: &Path, latex: &str) -> Result<PathBuf, String>{
 }
 
 #[tauri::command]
-async fn export_pdf(latex: String, path: String) -> Result<(), String>{
+async fn export_pdf(app: tauri::AppHandle, latex: String, path: String) -> Result<(), String>{
     //own folder per run so two exports never clobber each other
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -114,7 +119,7 @@ async fn export_pdf(latex: String, path: String) -> Result<(), String>{
     result?;
 
     //the PDF is saved either way, not having a viewer is not an export failure
-    let _ = Command::new("open").arg(&path).spawn();
+    let _ = app.opener().open_path(path, None::<&str>);
     Ok(())
 }
 
@@ -192,7 +197,7 @@ mod tests{
     #[test]
     fn compiles_a_pdf(){
         //needs a TeX install, so it only really runs on a machine that has one
-        if Command::new(pdflatex()).arg("-version").output().is_err(){
+        if pdflatex().arg("-version").output().is_err(){
             return;
         }
         let dir = std::env::temp_dir().join(format!("mathtyper-test-pdf-{}", std::process::id()));
