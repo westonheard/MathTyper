@@ -89,6 +89,13 @@ if(import.meta.env.DEV){(window as any).editor = editor;}
 type Btn = { label: string; title: string; run: () => void; active?: () => boolean };
 const c = editor.chain.bind(editor);
 const toolbar = document.querySelector("#toolbar")!;
+//controls go into groups and the toolbar wraps a whole group at a time, so a narrow window
+//doesn't break them up one button at a time
+let group: Element = toolbar;
+function newGroup(){
+  group = toolbar.appendChild(Object.assign(document.createElement("div"), { className: "group" }));
+}
+newGroup();
 const btnEls: [HTMLButtonElement, Btn][] = [];
 function addButton(b: Btn, cls = ""): HTMLButtonElement{
   const el = document.createElement("button");
@@ -97,11 +104,15 @@ function addButton(b: Btn, cls = ""): HTMLButtonElement{
   if(cls){el.className = cls;}
   el.addEventListener("mousedown", (e) => e.preventDefault()); //keep editor focus
   el.addEventListener("click", b.run);
-  toolbar.appendChild(el);
+  group.appendChild(el);
   if(b.active){btnEls.push([el, b]);}
   return el;
 }
-const sep = () => toolbar.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
+//the divider stays at the end of the group before it, a wrapped row never starts with one
+const sep = () => {
+  group.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
+  newGroup();
+};
 const addButtons = (list: Btn[]) => list.forEach((b) => addButton(b));
 function toolbarSelect(options: [string, string][], title: string, onchange: (v: string) => void): HTMLSelectElement{
   const s = document.createElement("select");
@@ -113,7 +124,7 @@ function toolbarSelect(options: [string, string][], title: string, onchange: (v:
     s.appendChild(o);
   }
   s.addEventListener("change", () => onchange(s.value));
-  toolbar.appendChild(s);
+  group.appendChild(s);
   return s;
 }
 
@@ -331,6 +342,7 @@ function symbolGrid(symbols: SymbolEntry[]): HTMLDivElement{
 }
 
 //one small button per major category…
+newGroup();
 for(const cat of SYMBOL_CATEGORIES.filter((c2) => c2.button)){
   const b = addButton({ label: cat.button!, title: cat.label, run: () => {} }, "symbol-cat");
   b.addEventListener("click", captureMathTarget);
@@ -416,6 +428,7 @@ function insertSymbol(latex: string){
 
 //right side of the toolbar
 toolbar.appendChild(Object.assign(document.createElement("span"), { className: "spacer" }));
+newGroup();
 
 const zoomSel = document.createElement("select");
 zoomSel.title = "Zoom";
@@ -431,7 +444,7 @@ zoomSel.addEventListener("change", () => {
   applySettings();
   scheduleAutosave();
 });
-toolbar.appendChild(zoomSel);
+group.appendChild(zoomSel);
 
 //page setup
 function settingsChanged(){
@@ -489,6 +502,7 @@ const syncPageControls: (() => void)[] = [];
   row("Margin (in)", margin);
 }
 
+newGroup();
 addButton({ label: "New", title: "New document (⌘N)", run: () => newDoc() }, "action");
 addButton({ label: "Open", title: "Open document (⌘O)", run: openDoc }, "action");
 if(isTauri){
@@ -514,9 +528,11 @@ if(isTauri){
   });
 }
 addButton({ label: "Save", title: "Save document (⌘S)", run: () => saveDoc() }, "action");
+newGroup();
 addButton({ label: "Export .tex", title: "Export LaTeX source", run: exportTex }, "action");
 addButton({ label: "Export PDF", title: "Compile with pdflatex and save the PDF", run: exportPdf }, "action");
 
+newGroup();
 addButton({ label: "◐", title: "Dark mode", run: () => {
   const on = document.body.classList.toggle("dark");
   try{ localStorage.setItem("mt-theme", on ? "dark" : "light"); }catch{}

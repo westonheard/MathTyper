@@ -24,6 +24,7 @@ body {
   background: #fff; border-bottom: 1px solid #ddd;
   flex-wrap: wrap;
 }
+#toolbar .group { display: flex; align-items: center; gap: 4px; }
 #toolbar button {
   min-width: 32px; height: 30px; padding: 0 8px;
   border: 1px solid transparent; border-radius: 6px;
