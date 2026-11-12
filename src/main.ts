@@ -541,11 +541,34 @@ try{
   if(localStorage.getItem("mt-theme") === "dark"){document.body.classList.add("dark");}
 }catch{}
 
-const panes = document.querySelector("#panes")!;
+const panes = document.querySelector<HTMLElement>("#panes")!;
 addButton({ label: "⇥", title: "Show/hide LaTeX pane", run: () => {
   panes.classList.toggle("pane-hidden");
   refresh(); //catches the pane up on edits made while it was hidden
 } });
+
+//---------- pane divider ----------
+//dragging it sets the width of the LaTeX pane, which is remembered like the theme
+const divider = document.querySelector<HTMLElement>("#divider")!;
+divider.addEventListener("pointerdown", (e) => {
+  e.preventDefault(); //no text selection while dragging
+  divider.setPointerCapture(e.pointerId); //keeps the moves coming when the cursor leaves the bar
+  divider.classList.add("dragging");
+});
+divider.addEventListener("pointermove", (e) => {
+  if(!divider.hasPointerCapture(e.pointerId)){return;}
+  const r = panes.getBoundingClientRect();
+  const w = Math.max(200, Math.min(r.width - 326, r.right - e.clientX));
+  panes.style.setProperty("--pane-w", `${Math.round(w)}px`);
+});
+divider.addEventListener("pointerup", () => {
+  divider.classList.remove("dragging");
+  try{ localStorage.setItem("mt-pane-w", panes.style.getPropertyValue("--pane-w")); }catch{}
+});
+try{
+  const w = localStorage.getItem("mt-pane-w");
+  if(w && /^\d+px$/.test(w)){panes.style.setProperty("--pane-w", w);}
+}catch{}
 
 //---------- live LaTeX pane ----------
 const pane = document.querySelector("#latex-pane")!;

@@ -41,9 +41,13 @@ body {
 }
 
 /* panes */
-#panes { display: grid; grid-template-columns: 1fr minmax(280px, 34%); min-height: 0; }
+/* --pane-w is set by dragging the divider. the editor column keeps at least 320px, so a
+   width saved on a big window can't squeeze it out on a small one */
+#panes { display: grid; grid-template-columns: minmax(320px, 1fr) 6px minmax(200px, var(--pane-w, 34%)); min-height: 0; }
 #panes.pane-hidden { grid-template-columns: 1fr; }
-#panes.pane-hidden #latex-pane { display: none; }
+#panes.pane-hidden #latex-pane, #panes.pane-hidden #divider { display: none; }
+#divider { background: #ddd; cursor: col-resize; touch-action: none; }
+#divider:hover, #divider.dragging { background: #7aa5f8; }
 #editor-wrap { overflow: auto; padding: 32px 24px; }
 #editor {
   width: var(--page-w);
@@ -90,7 +94,7 @@ body {
   margin: 0; padding: 20px 24px; overflow: auto;
   background: #23241f; color: #d6d3cb;
   font: 13px/1.5 "SF Mono", Menlo, monospace;
-  border-left: 1px solid #ddd; white-space: pre-wrap;
+  white-space: pre-wrap;
 }
 
 /* math: equations are static markup (.ML__latex) until clicked, then a live math-field */
@@ -168,7 +172,8 @@ body.dark #toolbar button.active { background: #2b3a55; border-color: #3d5580; }
 body.dark #toolbar button.action, body.dark #toolbar select { background: #2a2a2a; border-color: #444; color: #e6e6e6; }
 body.dark #toolbar .sep { background: #3a3a3a; }
 body.dark #editor { background: #0d0d0d; border-color: #2e2e2e; color: #ececec; box-shadow: none; }
-body.dark #latex-pane { border-color: #333; }
+body.dark #divider { background: #333; }
+body.dark #divider:hover, body.dark #divider.dragging { background: #41598a; }
 body.dark .ProseMirror code { background: #262626; }
 body.dark .popover { background: #222; border-color: #444; color: #e6e6e6; }
 body.dark .symbol-grid button { color: #e6e6e6; }
